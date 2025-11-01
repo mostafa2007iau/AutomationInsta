@@ -22,7 +22,8 @@ This project uses `instagrapi` for Instagram communication and can be deployed e
   - [Automation Management](#automation-management)
   - [n8n Integration](#n8n-integration)
 - [Connecting with n8n](#connecting-with-n8n)
-  - [Example Workflow: Replying to comments with AI](#example-workflow-replying-to-comments-with-ai)
+  - [Workflow 1: Login to Instagram (Run Once)](#workflow-1-login-to-instagram-run-once)
+  - [Workflow 2: AI-Powered Comment Replies (Scheduled)](#workflow-2-ai-powered-comment-replies-scheduled)
 - [Project Structure](#project-structure)
 - [Farsi Documentation (مستندات فارسی)](#farsi-documentation-مستندات-فارسی)
 
@@ -183,6 +184,172 @@ The API is documented with Swagger UI, available at `/docs`.
     3.  **`get_media_comments`**:
         -   **Payload**: `{ "media_id": "12345", "amount": 30 }`
 
+## Connecting with n8n
+
+You can use the dedicated n8n endpoint (`/api/n8n/action`) to build powerful, custom automation workflows. Below are two essential workflows to get you started.
+
+### Workflow 1: Login to Instagram (Run Once)
+
+Before running any other workflows, you must log in to your Instagram account via the API. This workflow only needs to be run **once** successfully. The application will maintain the session for future actions.
+
+**Choose one of the two methods below.**
+
+#### Method A: Login with Credentials
+
+```
++----------------------------------------------+
+| [1] Manual Start                             |
+|     (Executes the workflow once)             |
++----------------------------------------------+
+                  |
+                  |
+                  v
++----------------------------------------------+
+| [2] Login with Credentials (HTTP Request)    |
++----------------------------------------------+
+| Method:         POST                         |
+| URL:            http://localhost:8000/login/credentials |
+| Body Type:      JSON                         |
+| Body:                                        |
+|   {                                          |
+|     "username": "your_instagram_username",   |
+|     "password": "your_instagram_password"    |
+|   }                                          |
++----------------------------------------------+
+```
+
+#### Method B: Login with Session JSON
+
+This is the recommended method if you have your session data.
+
+```
++----------------------------------------------+
+| [1] Manual Start                             |
+|     (Executes the workflow once)             |
++----------------------------------------------+
+                  |
+                  |
+                  v
++----------------------------------------------+
+| [2] Login with Session (HTTP Request)        |
++----------------------------------------------+
+| Method:         POST                         |
+| URL:            http://localhost:8000/login/session |
+| Body Type:      JSON                         |
+| Body:                                        |
+|   {                                          |
+|     "session_data": {                        |
+|       "sessionid": "...",                    |
+|       "csrftoken": "...",                    |
+|       "...": "..."                           |
+|     }                                        |
+|   }                                          |
++----------------------------------------------+
+```
+
+After executing either of these workflows, the backend will be logged in and ready to handle automation tasks.
+
+### Workflow 2: AI-Powered Comment Replies (Scheduled)
+
+This workflow runs on a schedule, fetches new comments from a specific post, uses an AI agent to generate intelligent replies, and posts them back to Instagram.
+
+#### Overall Workflow Diagram
+
+```
++--------------+   +-------------------+   +-----------------+   +------------------+   +--------------------+
+| [1] Cron     |-->| [2] Get Comments  |-->| [3] Split Items |-->| [4] AI Agent     |-->| [5] Post Reply     |
+| (Every 5m)   |   | (HTTP Request)    |   | (SplitInBatches)|   | (e.g., OpenAI)   |   | (HTTP Request)     |
++--------------+   +-------------------+   +-----------------+   +------------------+   +--------------------+
+```
+
+#### Step-by-Step Node Configuration
+
+**Step 1: Cron Node (Trigger)**
+This node starts the workflow on a schedule.
+
+```
++----------------------------------------------+
+| [1] Cron (Schedule Trigger)                  |
++----------------------------------------------+
+| Mode:           Every X Minutes              |
+| Minutes:        5                            |
++----------------------------------------------+
+```
+
+**Step 2: Get Comments Node (HTTP Request)**
+This node calls our API to fetch the latest comments for a specific post.
+
+```
++----------------------------------------------+
+| [2] Get Comments (HTTP Request)              |
++----------------------------------------------+
+| Method:         POST                         |
+| URL:            http://localhost:8000/api/n8n/action |
+| Body Type:      JSON                         |
+| Body:                                        |
+|   {                                          |
+|     "action": "get_media_comments",           |
+|     "payload": {                             |
+|       "media_id": "YOUR_POST_MEDIA_ID"       |
+|     }                                        |
+|   }                                          |
+| Options:                                     |
+|   Split Into:   Items                        |
+|   Path:         data                         |
++----------------------------------------------+
+```
+> **Note**: `media_id` is the unique identifier for an Instagram post (e.g., `319_12345...`). You can find this using various online tools or from the post's URL structure. The `Split Into: Items` option automatically processes each comment individually in the next steps.
+
+**Step 3: AI Agent Node (e.g., OpenAI)**
+This node receives the comment text and generates a human-like reply.
+
+```
++----------------------------------------------+
+| [4] OpenAI (AI Agent)                        |
++----------------------------------------------+
+| Resource:       Chat                         |
+| Model:          gpt-4o                       |
+| Prompt:                                      |
+|   Based on this Instagram comment:           |
+|   "{{ $json.text }}"                         |
+|                                              |
+|   Write a friendly and engaging reply.       |
+|   Keep it concise and positive.              |
+|                                              |
++----------------------------------------------+
+```
+> The `{{ $json.text }}` expression dynamically inserts the text from the comment received in the previous step.
+
+**Step 4: Post Reply Node (HTTP Request)**
+This final node sends the AI-generated reply back to our API to be posted on Instagram.
+
+```
++----------------------------------------------+
+| [5] Post Reply (HTTP Request)                |
++----------------------------------------------+
+| Method:         POST                         |
+| URL:            http://localhost:8000/api/n8n/action |
+| Body Type:      JSON                         |
+| Body:                                        |
+|   {                                          |
+|     "action": "post_comment",                 |
+|     "payload": {                             |
+|       "media_id": "{{ $json.media.pk }}",    |
+|       "text": "{{ $('OpenAI').json.choices[0].message.content }}" |
+|     }                                        |
+|   }                                          |
++----------------------------------------------+
+```
+> **Expressions Explained**:
+> - `{{ $json.media.pk }}`: This retrieves the `pk` (same as `media_id`) of the post from the original comment data.
+> - `{{ $('OpenAI').json.choices[0].message.content }}`: This retrieves the generated text content from the output of the OpenAI node.
+
+By setting up this workflow, you create a fully automated and intelligent comment management system.
+
+---
+- [Project Structure](#project-structure)
+- [Farsi Documentation (مستندات فارسی)](#farsi-documentation-مستندات-فارسی)
+
 ---
 
 # Farsi Documentation (مستندات فارسی)
@@ -209,7 +376,8 @@ The API is documented with Swagger UI, available at `/docs`.
   - [مدیریت اتومیشن (Automation Management)](#مدیریت-اتومیشن-automation-management)
   - [اتصال به n8n (n8n Integration)](#اتصال-به-n8n-n8n-integration)
 - [آموزش اتصال به n8n](#آموزش-اتصال-به-n8n)
-  - [مثال: پاسخ به کامنت‌ها با هوش مصنوعی](#مثال-پاسخ-به-کامنت‌ها-با-هوش-مصنوعی)
+  - [ورک‌فلو ۱: لاگین به اینستاگرام (فقط یک بار اجرا شود)](#ورک‌فلو-۱-لاگین-به-اینستاگرام-فقط-یک-بار-اجرا-شود)
+  - [ورک‌فلو ۲: پاسخ هوشمند به کامنت‌ها با AI (زمان‌بندی شده)](#ورک‌فلو-۲-پاسخ-هوشمند-به-کامنت‌ها-با-ai-زمان‌بندی-شده)
 
 ---
 
@@ -371,59 +539,162 @@ The API is documented with Swagger UI, available at `/docs`.
 
 ## آموزش اتصال به n8n
 
-شما می‌توانید از Endpoint اختصاصی n8n برای ساخت ورک‌فلوهای قدرتمند استفاده کنید.
+شما می‌توانید از Endpoint اختصاصی n8n برای ساخت ورک‌فلوهای قدرتمند و سفارشی استفاده کنید. در ادامه دو ورک‌فلو ضروری برای شروع کار شما توضیح داده شده است.
 
-### مثال: پاسخ به کامنت‌ها با هوش مصنوعی
+### ورک‌فلو ۱: لاگین به اینستاگرام (فقط یک بار اجرا شود)
 
-در این سناریو، ما یک ورک‌فلو در n8n می‌سازیم که:
-۱. هر چند دقیقه یک‌بار، کامنت‌های جدید یک پست را از اپلیکیشن ما دریافت می‌کند.
-۲. متن کامنت‌ها را به یک سرویس هوش مصنوعی (مانند OpenAI) ارسال می‌کند تا یک پاسخ هوشمند تولید شود.
-۳. پاسخ تولید شده را با استفاده از اپلیکیشن ما زیر همان کامنت ارسال می‌کند.
+قبل از اجرای هر ورک‌فلو دیگری، باید از طریق API به حساب اینستاگرام خود لاگین کنید. این ورک‌فلو فقط **یک بار** نیاز به اجرای موفقیت‌آمیز دارد. اپلیکیشن، نشست (Session) را برای اقدامات بعدی فعال نگه می‌دارد.
 
-**مراحل ساخت ورک‌فلو در n8n**:
+**یکی از دو روش زیر را انتخاب کنید.**
 
-1.  **نود شروع (Cron Node)**:
-    -   یک نود **Cron** اضافه کنید و آن را تنظیم کنید تا هر ۵ دقیقه یک‌بار اجرا شود (`*/5 * * * *`).
+#### روش الف: ورود با نام کاربری و رمز عبور
 
-2.  **نود HTTP Request (برای دریافت کامنت‌ها)**:
-    -   یک نود **HTTP Request** اضافه کنید و تنظیمات زیر را وارد نمایید:
-        -   **Method**: `POST`
-        -   **URL**: `http://<YOUR_BACKEND_HOST>:<PORT>/api/n8n/action`
-        -   **Body Content Type**: `JSON`
-        -   **Body**:
-            ```json
-            {
-              "action": "get_media_comments",
-              "payload": {
-                "media_id": "YOUR_INSTAGRAM_MEDIA_ID"
-              }
-            }
-            ```
-            > **نکته**: `media_id` همان `pk` پست است که می‌توانید از طریق ابزارهای دیگر یا API خود اینستاگرام به دست آورید.
+```
++----------------------------------------------+
+| [1] Start (شروع دستی)                        |
+|     (ورک‌فلو را یک بار اجرا می‌کند)             |
++----------------------------------------------+
+                  |
+                  |
+                  v
++----------------------------------------------+
+| [2] Login with Credentials (HTTP Request)    |
++----------------------------------------------+
+| Method:         POST                         |
+| URL:            http://localhost:8000/login/credentials |
+| Body Type:      JSON                         |
+| Body:                                        |
+|   {                                          |
+|     "username": "your_instagram_username",   |
+|     "password": "your_instagram_password"    |
+|   }                                          |
++----------------------------------------------+
+```
 
-3.  **نود SplitInBatches (برای پردازش تک‌تک کامنت‌ها)**:
-    -   یک نود **SplitInBatches** اضافه کنید و `Field to Split` را روی `data` تنظیم کنید. این کار باعث می‌شود هر کامنت به صورت یک آیتم جداگانه در n8n پردازش شود.
+#### روش ب: ورود با Session JSON
 
-4.  **نود AI (مانند OpenAI)**:
-    -   یک نود **OpenAI** یا هر سرویس AI دیگری اضافه کنید.
-    -   در قسمت **Prompt**، از n8n بخواهید تا یک پاسخ برای متن کامنت دریافتی از مرحله قبل تولید کند. مثال:
-        `Based on this comment: "{{$json["text"]}}", write a friendly and helpful reply.`
+این روش در صورتی که اطلاعات نشست (Session) خود را داشته باشید، توصیه می‌شود.
 
-5.  **نود HTTP Request (برای ارسال پاسخ)**:
-    -   یک نود **HTTP Request** دیگر اضافه کنید:
-        -   **Method**: `POST`
-        -   **URL**: `http://<YOUR_BACKEND_HOST>:<PORT>/api/n8n/action`
-        -   **Body Content Type**: `JSON`
-        -   **Body**:
-            ```json
-            {
-              "action": "post_comment",
-              "payload": {
-                "media_id": "{{$json["media"]["pk"]}}",
-                "text": "{{$json["choices"][0]["message"]["content"]}}"
-              }
-            }
-            ```
-            > **توضیح**: در اینجا ما `media_id` را از داده‌های کامنت اصلی و `text` را از خروجی نود OpenAI دریافت می‌کنیم.
+```
++----------------------------------------------+
+| [1] Start (شروع دستی)                        |
+|     (ورک‌فلو را یک بار اجرا می‌کند)             |
++----------------------------------------------+
+                  |
+                  |
+                  v
++----------------------------------------------+
+| [2] Login with Session (HTTP Request)        |
++----------------------------------------------+
+| Method:         POST                         |
+| URL:            http://localhost:8000/login/session |
+| Body Type:      JSON                         |
+| Body:                                        |
+|   {                                          |
+|     "session_data": {                        |
+|       "sessionid": "...",                    |
+|       "csrftoken": "...",                    |
+|       "...": "..."                           |
+|     }                                        |
+|   }                                          |
++----------------------------------------------+
+```
 
-با فعال کردن این ورک‌فلو، شما یک سیستم پاسخ‌دهی هوشمند به کامنت‌ها خواهید داشت که به صورت خودکار کار می‌کند.
+پس از اجرای موفقیت‌آمیز یکی از این دو ورک‌فلو، بک‌اند به حساب شما متصل شده و آماده اجرای تسک‌های اتوماسیون است.
+
+### ورک‌فلو ۲: پاسخ هوشمند به کامنت‌ها با AI (زمان‌بندی شده)
+
+این ورک‌فلو به صورت زمان‌بندی شده اجرا می‌شود، کامنت‌های جدید یک پست مشخص را دریافت می‌کند، از یک عامل هوش مصنوعی برای تولید پاسخ‌های هوشمند استفاده می‌کند و آن‌ها را در اینستاگرام منتشر می‌کند.
+
+#### دیاگرام کلی ورک‌فلو
+
+```
++--------------+   +-------------------+   +-----------------+   +------------------+   +--------------------+
+| [1] Cron     |-->| [2] دریافت کامنت‌ها |-->| [3] تفکیک آیتم‌ها |-->| [4] عامل AI      |-->| [5] ارسال پاسخ      |
+| (هر ۵ دقیقه)  |   | (HTTP Request)    |   | (SplitInBatches)|   | (مثلاً OpenAI)   |   | (HTTP Request)     |
++--------------+   +-------------------+   +-----------------+   +------------------+   +--------------------+
+```
+
+#### تنظیمات قدم به قدم نودها
+
+**قدم ۱: نود Cron (شروع‌کننده)**
+این نود ورک‌فلو را بر اساس یک زمان‌بندی مشخص شروع می‌کند.
+
+```
++----------------------------------------------+
+| [1] Cron (شروع زمان‌بندی شده)                |
++----------------------------------------------+
+| Mode:           Every X Minutes              |
+| Minutes:        5                            |
++----------------------------------------------+
+```
+
+**قدم ۲: نود دریافت کامنت‌ها (HTTP Request)**
+این نود با API ما ارتباط برقرار کرده و آخرین کامنت‌های یک پست مشخص را دریافت می‌کند.
+
+```
++----------------------------------------------+
+| [2] Get Comments (HTTP Request)              |
++----------------------------------------------+
+| Method:         POST                         |
+| URL:            http://localhost:8000/api/n8n/action |
+| Body Type:      JSON                         |
+| Body:                                        |
+|   {                                          |
+|     "action": "get_media_comments",           |
+|     "payload": {                             |
+|       "media_id": "YOUR_POST_MEDIA_ID"       |
+|     }                                        |
+|   }                                          |
+| Options:                                     |
+|   Split Into:   Items                        |
+|   Path:         data                         |
++----------------------------------------------+
+```
+> **نکته**: `media_id` شناسه‌ی یکتای یک پست در اینستاگرام است (مثلاً `319_12345...`). شما می‌توانید این شناسه را با ابزارهای آنلاین مختلف یا از ساختار URL پست پیدا کنید. گزینه `Split Into: Items` باعث می‌شود هر کامنت به صورت مجزا در مراحل بعدی پردازش شود.
+
+**قدم ۳: نود عامل هوش مصنوعی (مثلاً OpenAI)**
+این نود متن کامنت را دریافت کرده و یک پاسخ انسان-مانند تولید می‌کند.
+
+```
++----------------------------------------------+
+| [4] OpenAI (عامل هوش مصنوعی)                 |
++----------------------------------------------+
+| Resource:       Chat                         |
+| Model:          gpt-4o                       |
+| Prompt:                                      |
+|   Based on this Instagram comment:           |
+|   "{{ $json.text }}"                         |
+|                                              |
+|   Write a friendly and engaging reply in Persian. |
+|   Keep it concise and positive.              |
+|                                              |
++----------------------------------------------+
+```
+> عبارت `{{ $json.text }}` متن کامنت دریافت شده از مرحله قبل را به صورت پویا در پرامپت قرار می‌دهد.
+
+**قدم ۴: نود ارسال پاسخ (HTTP Request)**
+این نود نهایی، پاسخ تولید شده توسط AI را به API ما ارسال می‌کند تا در اینستاگرام منتشر شود.
+
+```
++----------------------------------------------+
+| [5] Post Reply (HTTP Request)                |
++----------------------------------------------+
+| Method:         POST                         |
+| URL:            http://localhost:8000/api/n8n/action |
+| Body Type:      JSON                         |
+| Body:                                        |
+|   {                                          |
+|     "action": "post_comment",                 |
+|     "payload": {                             |
+|       "media_id": "{{ $json.media.pk }}",    |
+|       "text": "{{ $('OpenAI').json.choices[0].message.content }}" |
+|     }                                        |
+|   }                                          |
++----------------------------------------------+
+```
+> **توضیح عبارات**:
+> - `{{ $json.media.pk }}`: این عبارت `pk` (معادل `media_id`) پست را از داده‌های اصلی کامنت بازیابی می‌کند.
+> - `{{ $('OpenAI').json.choices[0].message.content }}`: این عبارت، متن تولید شده توسط نود OpenAI را از خروجی آن استخراج می‌کند.
+
+با راه‌اندازی این ورک‌فلو، شما یک سیستم مدیریت کامنت تماماً خودکار و هوشمند خواهید داشت.
