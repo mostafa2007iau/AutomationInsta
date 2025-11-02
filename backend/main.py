@@ -139,8 +139,8 @@ async def stop_automation(task_id: str):
 
 # --- n8n Integration Endpoint ---
 class N8NRequest(BaseModel):
-    action: str # e.g., "send_dm", "get_comments"
-    payload: dict
+    action: str
+    params: dict
 
 @app.post("/api/n8n/action", tags=["n8n Integration"])
 async def handle_n8n_action(request: N8NRequest):
@@ -151,50 +151,60 @@ async def handle_n8n_action(request: N8NRequest):
         return JSONResponse(status_code=403, content={"message": "Authentication required."})
 
     action = request.action
-    payload = request.payload
+    params = request.params
 
     try:
         if action == "send_dm":
-            user_id = payload.get("user_id")
-            text = payload.get("text")
-            if not user_id or not text:
-                return JSONResponse(status_code=400, content={"message": "user_id and text are required for send_dm."})
-            client.cl.direct_send(text, user_ids=[str(user_id)])
-            return {"status": "success", "message": f"DM sent to user {user_id}."}
+            username = params.get("username")
+            message = params.get("message")
+            if not username or not message:
+                return JSONResponse(status_code=400, content={"message": "'username' and 'message' are required."})
 
-        elif action == "post_comment":
-            media_id = payload.get("media_id")
-            text = payload.get("text")
-            if not media_id or not text:
-                return JSONResponse(status_code=400, content={"message": "media_id and text are required for post_comment."})
-            client.cl.media_comment(media_id, text)
-            return {"status": "success", "message": f"Comment posted on media {media_id}."}
+            user_id = client.cl.user_id_from_username(username)
+            client.cl.direct_send(message, user_ids=[user_id])
+            return {"status": "success", "message": f"DM sent to {username}."}
 
-        elif action == "get_media_comments":
-            media_id = payload.get("media_id")
-            amount = payload.get("amount", 20)
+        elif action == "reply_to_comment":
+            comment_id = params.get("comment_id")
+            message = params.get("message")
+            if not comment_id or not message:
+                return JSONResponse(status_code=400, content={"message": "'comment_id' and 'message' are required."})
+
+            # To reply, we need the media ID associated with the comment.
+            # Instagrapi's comment object contains the media pk.
+            # This action is simplified; a real implementation might need to fetch the comment first if not passed in.
+            # For n8n, the media_id should be passed alongside the comment_id from the node that fetches comments.
+            media_id = params.get("media_id")
             if not media_id:
-                return JSONResponse(status_code=400, content={"message": "media_id is required for get_media_comments."})
-            comments = client.cl.media_comments(media_id, amount=int(amount))
-            comments_data = [c.dict() for c in comments]
-            return {"status": "success", "data": comments_data}
+                 return JSONResponse(status_code=400, content={"message": "'media_id' is required to reply to a comment."})
+
+            client.cl.media_comment(media_id, message, replied_to_comment_id=comment_id)
+            return {"status": "success", "message": f"Replied to comment {comment_id}."}
 
         elif action == "get_user_posts":
-            user_id = payload.get("user_id", client.cl.user_id) # Defaults to self if no user_id is provided
-            amount = payload.get("amount", 10)
-            if not user_id:
-                return JSONResponse(status_code=400, content={"message": "user_id is required."})
-            posts = client.cl.user_medias(user_id, amount=int(amount))
+            username = params.get("username", client.username) # Defaults to self
+            count = params.get("count", 10)
+
+            user_id = client.cl.user_id_from_username(username)
+            posts = client.cl.user_medias(user_id, amount=int(count))
             posts_data = [p.dict() for p in posts]
             return {"status": "success", "data": posts_data}
 
         elif action == "check_follower_status":
-            target_user_id = payload.get("target_user_id")
-            if not target_user_id:
-                return JSONResponse(status_code=400, content={"message": "target_user_id is required."})
+            user_to_check = params.get("user_to_check")
+            user_to_check_against = params.get("user_to_check_against", client.username)
+            if not user_to_check:
+                return JSONResponse(status_code=400, content={"message": "'user_to_check' is required."})
 
-            followers = await client.get_followers()
-            is_follower = str(target_user_id) in followers
+            # Get the user ID for the account we are checking against
+            check_against_id = client.cl.user_id_from_username(user_to_check_against)
+
+            # Get followers of that account
+            followers = client.cl.user_followers(check_against_id)
+
+            # Check if the user_to_check is in the follower list by username
+            is_follower = any(user.username == user_to_check for user in followers.values())
+
             return {"status": "success", "is_follower": is_follower}
 
         else:
