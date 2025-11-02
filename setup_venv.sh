@@ -42,8 +42,6 @@ nohup .venv/bin/uvicorn main:app --host 0.0.0.0 --port "$BACKEND_PORT" --app-dir
 BACKEND_PID=$!
 
 echo "Starting Frontend service on port $FRONTEND_PORT..."
-# Update the API base URL in the frontend script before starting
-sed -i "s|http://localhost:8000|http://localhost:$BACKEND_PORT|g" frontend/script.js
 nohup .venv/bin/python3 -m http.server "$FRONTEND_PORT" --directory frontend > frontend.log 2>&1 &
 FRONTEND_PID=$!
 

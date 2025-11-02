@@ -1,161 +1,123 @@
+import asyncio
 from instagrapi import Client
 from instagrapi.exceptions import LoginRequired
 import os
 import json
-
 import uuid
-
 import time
+import random
+from instagrapi.types import Comment
+import httpx
+
+WEBHOOK_FILE = "data/webhooks.json"
 
 class InstagramClient:
-    """
-    A wrapper class for the instagrapi.Client to manage Instagram interactions,
-    including login, logout, and automation tasks.
-    """
     def __init__(self):
         self.cl = Client()
         self.is_logged_in = False
         self.username = None
-        self.active_tasks = {} # To store and manage running automation tasks
-        # Centralized cache for followers list
+        self.active_tasks = {}
         self._followers_cache = None
         self._cache_expiry_time = 0
-        self._CACHE_DURATION_SECONDS = 1800 # 30 minutes
+        self._CACHE_DURATION_SECONDS = 1800
+        self.webhooks = self._load_webhooks()
+
+    def _load_webhooks(self):
+        os.makedirs(os.path.dirname(WEBHOOK_FILE), exist_ok=True)
+        if os.path.exists(WEBHOOK_FILE):
+            with open(WEBHOOK_FILE, 'r') as f:
+                return json.load(f)
+        return []
+
+    def _save_webhooks(self):
+        with open(WEBHOOK_FILE, 'w') as f:
+            json.dump(self.webhooks, f, indent=4)
+
+    async def add_webhook(self, url: str):
+        if url not in self.webhooks:
+            self.webhooks.append(url)
+            await asyncio.to_thread(self._save_webhooks)
+            return True
+        return False
+
+    async def remove_webhook(self, url: str):
+        if url in self.webhooks:
+            self.webhooks.remove(url)
+            await asyncio.to_thread(self._save_webhooks)
+            return True
+        return False
+
+    async def trigger_webhooks(self, payload: dict):
+        async with httpx.AsyncClient() as client:
+            tasks = [client.post(url, json=payload) for url in self.webhooks]
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def login_with_credentials(self, username, password):
-        """
-        Logs in to Instagram using username and password.
-        Dumps the session to a JSON file for future use.
-        """
         try:
             session_dir = "sessions"
             os.makedirs(session_dir, exist_ok=True)
             session_file = os.path.join(session_dir, f"{username}_session.json")
-
-            # instagrapi login methods are synchronous, so we can't make the whole block async without running it in an executor.
-            # For simplicity, we will keep the login part synchronous and handle the async cache call carefully.
-            # This is a compromise. A full async implementation would require an async-native Instagram library.
-
             if os.path.exists(session_file):
-                self.cl.load_settings(session_file)
-                self.cl.login(username, password) # Re-login to verify session
-            else:
-                self.cl.login(username, password)
-
-            self.cl.dump_settings(session_file) # Always dump to refresh the session
+                await asyncio.to_thread(self.cl.load_settings, session_file)
+            await asyncio.to_thread(self.cl.login, username, password)
+            await asyncio.to_thread(self.cl.dump_settings, session_file)
             self.is_logged_in = True
             self.username = username
-            await self.get_followers(force_refresh=True) # Pre-populate cache on login
+            await self.get_followers(force_refresh=True)
             return True, f"Successfully logged in as {username}"
         except Exception as e:
             self.is_logged_in = False
             return False, str(e)
 
-    def login_with_session(self, session_json_data):
-        """
-        Logs in to Instagram using session data provided as a JSON string or dict.
-        """
+    async def login_with_session_id(self, session_id: str):
         try:
-            # The session data is loaded into the client
-            self.cl.load_settings_from_dict(session_json_data)
-            # A test request to verify the session is valid
-            self.cl.get_timeline_feed()
-
+            await asyncio.to_thread(self.cl.login_by_sessionid, session_id)
             self.is_logged_in = True
             self.username = self.cl.username
             return True, f"Successfully logged in with session as {self.cl.username}"
-        except LoginRequired:
-            self.is_logged_in = False
-            return False, "The provided session is invalid or has expired. Please log in again."
         except Exception as e:
             self.is_logged_in = False
             return False, str(e)
 
-    def logout(self):
-        """
-        Logs out from the current session and stops all running tasks.
-        """
+    async def logout(self):
         if self.is_logged_in:
-            # Stop all running tasks
             for task_id in list(self.active_tasks.keys()):
-                self.stop_automation(task_id)
-
+                await self.stop_automation(task_id)
             username = self.username
-
-            # Reset the client to clear session data
             self.cl = Client()
             self.is_logged_in = False
             self.username = None
-
-            return True, f"Successfully logged out from {username} and stopped all tasks."
+            return True, f"Successfully logged out from {username}."
         return False, "Not logged in."
 
-    def start_automation(self, background_tasks, post_url: str, keywords: list, comment_replies: list, dm_replies: list, followers_only: bool, follow_message: str):
-        """
-        Starts a new automation task in the background.
-        """
-        if not self.is_logged_in:
-            return None, "You must be logged in to start an automation task."
-
+    def start_automation(self, background_tasks, **kwargs):
         task_id = str(uuid.uuid4())
-        task = AutomationTask(
-            instagram_client=self,
-            post_url=post_url,
-            keywords=keywords,
-            comment_replies=comment_replies,
-            dm_replies=dm_replies,
-            followers_only=followers_only,
-            follow_message=follow_message
-        )
+        task = AutomationTask(instagram_client=self, **kwargs)
         self.active_tasks[task_id] = task
-
-        # Use FastAPI's BackgroundTasks to run the task without blocking
         background_tasks.add_task(task.run)
+        return task_id, f"Automation task {task_id} started."
 
-        return task_id, f"Automation task {task_id} started successfully for post {post_url}."
-
-    def stop_automation(self, task_id: str):
-        """
-        Stops a running automation task.
-        """
-        if task_id not in self.active_tasks:
-            return False, "Task ID not found."
-
-        task = self.active_tasks[task_id]
-        task.stop()
-        del self.active_tasks[task_id]
-
-        return True, f"Automation task {task_id} stopped successfully."
+    async def stop_automation(self, task_id: str):
+        task = self.active_tasks.pop(task_id, None)
+        if task:
+            await task.stop()
+            return True, f"Automation task {task_id} stopped."
+        return False, "Task ID not found."
 
     async def get_followers(self, force_refresh=False):
-        """
-        Returns a set of follower user IDs, using a time-based cache.
-        """
         current_time = time.time()
         if force_refresh or not self._followers_cache or current_time > self._cache_expiry_time:
-            print(f"Refreshing followers cache (Force: {force_refresh})...")
             try:
-                if not self.is_logged_in:
-                    print("Cannot refresh followers, not logged in.")
-                    return set()
-                followers_map = self.cl.user_followers(self.cl.user_id)
-                self._followers_cache = set(followers_map.keys())
-                self._cache_expiry_time = current_time + self._CACHE_DURATION_SECONDS
-                print(f"Followers cache refreshed successfully. Found {len(self._followers_cache)} followers.")
+                if self.is_logged_in:
+                    followers_map = await asyncio.to_thread(self.cl.user_followers, self.cl.user_id)
+                    self._followers_cache = set(followers_map.keys())
+                    self._cache_expiry_time = current_time + self._CACHE_DURATION_SECONDS
             except Exception as e:
                 print(f"Error refreshing followers cache: {e}")
                 return self._followers_cache or set()
-
         return self._followers_cache
 
-import asyncio
-import random
-from instagrapi.types import Comment
-
 class AutomationTask:
-    """
-    A class to hold the state and logic of a single automation task.
-    """
     def __init__(self, instagram_client, post_url: str, keywords: list, comment_replies: list, dm_replies: list, followers_only: bool, follow_message: str):
         self.parent_client = instagram_client
         self.cl = self.parent_client.cl
@@ -170,71 +132,46 @@ class AutomationTask:
         self.is_running = False
 
     async def _process_comment(self, comment: Comment):
-        """
-        Processes a single comment based on the automation rules.
-        """
-        # 1. Skip if already replied to (liked by us) or processed in this session
         if comment.has_liked or comment.pk in self.processed_comments:
             return
 
-        # Always mark as processed to avoid re-checking in the future
         self.processed_comments.add(comment.pk)
 
-        # 2. Check if comment contains keywords
         if not any(keyword in comment.text.lower() for keyword in self.keywords):
-            return # No keywords found, stop processing
+            return
+
+        await self.parent_client.trigger_webhooks(comment.dict())
 
         user_pk = str(comment.user.pk)
 
-        # 3. Check follower status if required
         if self.followers_only:
             our_followers = await self.parent_client.get_followers()
             if user_pk not in our_followers:
-                # Send DM asking to follow
                 if self.follow_message:
-                    self.cl.direct_send(self.follow_message, user_ids=[user_pk])
-                return # Stop processing this comment
+                    await asyncio.to_thread(self.cl.direct_send, self.follow_message, user_ids=[user_pk])
+                return
 
-        # 4. Reply to the comment with a human-like delay
         if self.comment_replies:
-            await asyncio.sleep(random.uniform(5, 15)) # Wait 5-15 seconds
+            await asyncio.sleep(random.uniform(5, 15))
             reply_text = random.choice(self.comment_replies)
-            self.cl.comment_reply(comment.pk, reply_text)
+            await asyncio.to_thread(self.cl.comment_reply, comment.pk, reply_text)
 
-        # 5. Send a DM with a human-like delay
         if self.dm_replies:
-            await asyncio.sleep(random.uniform(5, 15)) # Wait 5-15 seconds
+            await asyncio.sleep(random.uniform(5, 15))
             dm_text = random.choice(self.dm_replies)
-            self.cl.direct_send(dm_text, user_ids=[user_pk])
-
-        print(f"Processed comment {comment.pk} from user {comment.user.username}")
-
+            await asyncio.to_thread(self.cl.direct_send, dm_text, user_ids=[user_pk])
 
     async def run(self):
-        """
-        The main loop for the automation task. Runs until stopped.
-        """
         self.is_running = True
-        print(f"Starting automation for post {self.post_pk}...")
         while self.is_running:
             try:
-                # Fetch recent comments for the post
-                comments = self.cl.media_comments(self.post_pk, amount=20)
+                comments = await asyncio.to_thread(self.cl.media_comments, self.post_pk, amount=20)
                 for comment in comments:
                     await self._process_comment(comment)
-
-                # Wait for a variable duration before checking again to simulate human behavior
-                sleep_duration = random.uniform(60, 100)
-                await asyncio.sleep(sleep_duration)
+                await asyncio.sleep(random.uniform(60, 100))
             except Exception as e:
                 print(f"An error occurred in automation task: {e}")
-                # Optional: stop the task on error or just wait and retry
-                await asyncio.sleep(300) # Wait 5 minutes before retrying on error
+                await asyncio.sleep(300)
 
-
-    def stop(self):
-        """
-        Stops the automation task.
-        """
+    async def stop(self):
         self.is_running = False
-        print(f"Stopping automation for post {self.post_pk}.")
