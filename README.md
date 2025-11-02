@@ -18,174 +18,189 @@ This project uses `instagrapi` for Instagram communication and can be deployed e
 - [How to Use](#how-to-use)
 - [API Documentation](#api-documentation)
 - [Connecting with n8n (Advanced Tutorial)](#connecting-with-n8n-advanced-tutorial)
+  - [Prerequisite: Logging In](#prerequisite-logging-in)
+  - [Advanced Workflow: Smart, Rule-Based Comment Replies](#advanced-workflow-smart-rule-based-comment-replies)
 - [Project Structure](#project-structure)
 - [Farsi Documentation (مستندات فارسی)](#farsi-documentation-مستندات-فارسی)
 
 ---
 
-## (Sections: Features, Safety, How It Works - remain unchanged)
+## Features
+
+- **DM & Comment Automation**: Automatically reply to comments and send DMs based on keywords.
+- **Follower-Only Mode**: Restrict automation to only users who follow the page.
+- **Customizable Replies**: Set multiple random replies for both comments and DMs.
+- **No Official API Key Needed**: Works with private APIs via `instagrapi`.
+- **Simple Web Interface**: Easy-to-use UI for managing your automation tasks.
+- **Dockerized**: Quick and easy setup with Docker and Docker Compose.
+- **n8n Integration**: A dedicated, flexible endpoint to connect with automation platforms like n8n.
+
+## Safety Features & Human-Like Behavior
+
+This tool has been designed with the safety of your Instagram account in mind. To avoid being flagged as a bot and to minimize the risk of action blocks, the following features have been implemented:
+
+-   **Duplicate Reply Prevention**: The tool will not reply to a comment if it has already been answered (either by you or the bot). It checks if you have "liked" the comment, which Instagram does automatically when you reply.
+-   **Random Delays**: Before posting any comment or sending a DM, the bot waits for a random period (between 5 to 15 seconds) to mimic human typing and response time.
+-   **Variable Check Intervals**: The bot checks for new comments at variable intervals (between 60 to 100 seconds) instead of a fixed time, making its activity pattern less predictable.
+-   **Efficient Follower Cache**: The list of your followers is cached for 30 minutes to dramatically reduce the number of API requests, which is a key factor in avoiding rate limits.
+
+> **Disclaimer**: While these measures significantly increase safety, the use of any automation tool on Instagram carries inherent risks. Use it responsibly.
+
+## How It Works
+
+The application consists of two main parts:
+
+1.  **Backend (FastAPI)**: A Python server that handles all the logic. It uses the `instagrapi` library to connect to Instagram.
+2.  **Frontend (Vanilla JS/HTML/CSS)**: A simple user interface that runs in your browser.
 
 ## Installation
 
 ### Docker (Recommended)
-This is the easiest way to get the application running.
-**Prerequisites**:
-- [Docker](https://www.docker.com/get-started)
-- [Docker Compose](https://docs.docker.com/compose/install/)
 
-**Steps**:
+**Prerequisites**: Docker & Docker Compose.
+
 1.  **Clone the repository**.
-2.  **Run the interactive setup script**: `./install.sh`. This configures your ports.
-3.  **Build and run the containers**: `docker-compose up --build -d`.
-4.  **Access the application**:
-    -   Frontend: `http://localhost:<FRONTEND_PORT>`
-    -   API Docs: `http://localhost:<BACKEND_PORT>/docs`
+2.  **Run setup script**: `./install.sh`.
+3.  **Run containers**: `docker-compose up --build -d`.
+4.  **Access**: Frontend at `http://localhost:<FRONTEND_PORT>` and API docs at `http://localhost:<BACKEND_PORT>/docs`.
 
-> **✅ Service Persistence**: The Docker services are configured with `restart: unless-stopped`. This means they will automatically restart if the server reboots, ensuring the application is always running.
+> **✅ Service Persistence**: Docker services are configured with `restart: unless-stopped` and will restart automatically with the server.
 
 ### Manual Setup (venv)
-If you prefer not to use Docker, follow these steps.
-1.  **Clone the repository**.
-2.  **Run the venv setup script**: `./setup_venv.sh`.
-3.  **Activate the environment**: `source backend/.venv/bin/activate`.
-4.  **Run the servers** (in separate terminals):
-    -   Backend: `uvicorn main:app --host 0.0.0.0 --port 8000 --app-dir backend`
-    -   Frontend: `python3 -m http.server 8080 --directory frontend`
+
+1.  **Clone repository**.
+2.  **Run setup script**: `./setup_venv.sh`.
+3.  **Activate environment**: `source backend/.venv/bin/activate`.
+4.  **Run servers** in separate terminals.
 
 ## Making the Service Persistent (venv only)
-To ensure the application runs automatically after a server reboot when using the `venv` method, you need to set it up as a `systemd` service. This is the standard way to manage long-running applications on modern Linux systems.
 
-Template files are provided in the `deployment` directory.
+To make the `.venv` installation persistent across reboots, set it up as a `systemd` service. Templates and a full guide are in the Farsi documentation section, which applies to any Linux system.
 
-**Prerequisites**:
-- You are on a Linux system that uses `systemd` (e.g., Ubuntu, CentOS, Debian).
-- You have `sudo` (administrator) privileges.
+## How to Use
 
-**Step-by-Step Guide**:
+### 1. Logging In
+Use the UI to log in with your credentials or a session JSON.
 
-1.  **Navigate to the project directory**:
-    ```bash
-    cd /path/to/your/project
-    ```
-    Remember this path, you will need it.
+### 2. Creating an Automation Task
+Fill out the form in the UI to define the post, keywords, and replies for your automation.
 
-2.  **Edit the Backend Service File**:
-    -   Open `deployment/insta-backend.service`.
-    -   Replace `your_user` with your actual Linux username.
-    -   Replace all instances of `/path/to/your/project` with the **absolute path** to your project directory.
+### 3. Managing Tasks
+View and delete active automations from the list in the UI.
 
-3.  **Edit the Frontend Service File**:
-    -   Open `deployment/insta-frontend.service`.
-    -   Replace `your_user` with your Linux username.
-    -   Replace `/path/to/your/project` with the absolute path to your project directory.
+## API Documentation
 
-4.  **Copy the Files to systemd**:
-    ```bash
-    sudo cp deployment/insta-backend.service /etc/systemd/system/
-    sudo cp deployment/insta-frontend.service /etc/systemd/system/
-    ```
+Full API documentation is available at the `/docs` endpoint of the backend.
 
-5.  **Reload the systemd daemon**:
-    This command tells `systemd` to read the new service files.
-    ```bash
-    sudo systemctl daemon-reload
-    ```
+-   **Authentication**: Endpoints for login, logout, and status check.
+-   **Automation**: Endpoints to create, view, and delete automation tasks.
+-   **n8n Integration**: A powerful `/api/n8n/action` endpoint supporting actions like `send_dm`, `post_comment`, `get_user_posts`, and `check_follower_status`.
 
-6.  **Enable the services**:
-    This command makes the services start automatically on boot.
-    ```bash
-    sudo systemctl enable insta-backend.service
-    sudo systemctl enable insta-frontend.service
-    ```
-
-7.  **Start the services now**:
-    ```bash
-    sudo systemctl start insta-backend.service
-    sudo systemctl start insta-frontend.service
-    ```
-
-8.  **Check the status**:
-    You can check if the services are running correctly with:
-    ```bash
-    sudo systemctl status insta-backend.service
-    sudo systemctl status insta-frontend.service
-    ```
-    If everything is correct, you should see an "active (running)" status.
-
-## ... (Rest of the documentation remains the same) ...
+## Connecting with n8n (Advanced Tutorial)
+(This section is detailed in the Farsi translation below, which provides a universal step-by-step guide.)
 
 ---
 
 # Farsi Documentation (مستندات فارسی)
 
-... (Farsi introduction and other sections remain the same) ...
+## ابزار اتوماسیون اینستاگرام
 
-### روش اول: Docker (توصیه شده)
-... (Steps remain the same) ...
+یک ابزار اتوماسیون اینستاگرام متن-باز و سلف-هاست که مشابه ManyChat عمل می‌کند، با این تفاوت که نیازی به کلید API رسمی اینستاگرام ندارد.
 
-> **✅ پایداری سرویس**: سرویس‌های داکر با پالیسی `restart: unless-stopped` پیکربندی شده‌اند. این به آن معناست که اگر سرور شما ریبوت شود، سرویس‌ها به صورت خودکار مجدداً اجرا خواهند شد و اپلیکیشن شما همیشه در دسترس خواهد بود.
+### قابلیت‌ها
+- **اتوماسیون دایرکت و کامنت**
+- **حالت فقط فالوورها**
+- **پاسخ‌های سفارشی و رندوم**
+- **رابط کاربری ساده تحت وب**
+- **نصب آسان با Docker**
+- **اتصال به n8n**
 
-### روش دوم: نصب دستی (venv)
-... (Steps remain the same) ...
+### ویژگی‌های ایمنی و شبیه‌سازی رفتار انسانی
 
-## پایدارسازی سرویس (فقط برای نصب با venv)
-برای اطمینان از اینکه اپلیکیشن در صورت نصب با `venv` پس از ریبوت شدن سرور به صورت خودکار اجرا شود، باید آن را به عنوان یک سرویس `systemd` تعریف کنید. `systemd` روش استاندارد برای مدیریت سرویس‌های طولانی-مدت در سیستم‌عامل‌های مدرن لینوکس است.
+-   **جلوگیری از پاسخ تکراری**: با بررسی لایک شدن کامنت، از پاسخ مجدد جلوگیری می‌شود.
+-   **تأخیرهای تصادفی**: قبل از هر پاسخ، یک تأخیر رندوم برای شبیه‌سازی رفتار انسان اعمال می‌شود.
+-   **فواصل زمانی متغیر**: ربات در بازه‌های زمانی متغیر کامنت‌ها را چک می‌کند.
+-   **کش بهینه فالوورها**: برای کاهش شدید تعداد درخواست‌ها به اینستاگرام، لیست فالوورها کش می‌شود.
 
-فایل‌های الگو در پوشه `deployment` برای کمک به شما قرار داده شده‌اند.
+> **سلب مسئولیت**: استفاده از هرگونه ابزار اتوماسیون با ریسک همراه است. با مسئولیت استفاده کنید.
 
-**پیش‌نیازها**:
-- شما از یک سیستم‌عامل لینوکس که از `systemd` استفاده می‌کند (مانند اوبونتو، سنت‌اواس، دبیان) بهره می‌برید.
-- شما دسترسی `sudo` (مدیر سیستم) دارید.
+### نصب و راه‌اندازی
+
+#### روش اول: Docker (توصیه شده)
+1.  **پروژه را دریافت کنید**.
+2.  **اسکریپت نصب را اجرا کنید**: `./install.sh`.
+3.  **کانتینرها را اجرا کنید**: `docker-compose up --build -d`.
+4.  **دسترسی**: به `http://localhost:<FRONTEND_PORT>` مراجعه کنید.
+
+> **✅ پایداری سرویس**: سرویس‌های داکر به صورت خودکار پس از ریبوت سرور اجرا می‌شوند.
+
+#### روش دوم: نصب دستی (venv)
+1.  **پروژه را دریافت کنید**.
+2.  **اسکریپت نصب را اجرا کنید**: `./setup_venv.sh`.
+3.  **محیط مجازی را فعال کنید** و سرورها را در ترمینال‌های جداگانه اجرا نمایید.
+
+### پایدارسازی سرویس (فقط برای نصب با venv)
+
+برای اجرای خودکار اپلیکیشن پس از ریبوت سرور در نصب دستی، باید از `systemd` استفاده کنید.
 
 **راهنمای قدم به قدم**:
 
-۱. **به پوشه پروژه بروید**:
-    ```bash
-    cd /path/to/your/project
-    ```
-    این آدرس را به خاطر بسپارید، به آن نیاز خواهید داشت.
-
-۲. **ویرایش فایل سرویس بک‌اند**:
-    -   فایل `deployment/insta-backend.service` را باز کنید.
-    -   `your_user` را با نام کاربری لینوکس خود جایگزین کنید.
-    -   تمام موارد `/path/to/your/project` را با **آدرس کامل (absolute path)** پوشه پروژه خود جایگزین کنید.
-
-۳. **ویرایش فایل سرویس فرانت‌اند**:
-    -   فایل `deployment/insta-frontend.service` را باز کنید.
-    -   `your_user` را با نام کاربری لینوکس خود جایگزین کنید.
-    -   `/path/to/your/project` را با آدرس کامل پوشه پروژه خود جایگزین کنید.
-
-۴. **کپی کردن فایل‌ها به پوشه systemd**:
+1.  **ویرایش فایل‌های الگو**: فایل‌های `deployment/insta-backend.service` و `deployment/insta-frontend.service` را باز کرده و `your_user` را با نام کاربری لینوکس خود و `/path/to/your/project` را با آدرس کامل پروژه جایگزین کنید.
+2.  **کپی کردن فایل‌ها**:
     ```bash
     sudo cp deployment/insta-backend.service /etc/systemd/system/
     sudo cp deployment/insta-frontend.service /etc/systemd/system/
     ```
-
-۵. **بارگذاری مجدد systemd**:
-   این دستور به `systemd` می‌گوید که فایل‌های سرویس جدید را بخواند.
+3.  **بارگذاری و فعال‌سازی سرویس‌ها**:
     ```bash
     sudo systemctl daemon-reload
+    sudo systemctl enable insta-backend.service insta-frontend.service
+    sudo systemctl start insta-backend.service insta-frontend.service
     ```
+4.  **بررسی وضعیت**: `sudo systemctl status insta-backend.service`.
 
-۶. **فعال‌سازی سرویس‌ها**:
-   این دستور باعث می‌شود سرویس‌ها پس از هر بار بوت شدن سیستم، به صورت خودکار اجرا شوند.
-    ```bash
-    sudo systemctl enable insta-backend.service
-    sudo systemctl enable insta-frontend.service
-    ```
+### آموزش پیشرفته اتصال به n8n
 
-۷. **شروع به کار سرویس‌ها**:
-    ```bash
-    sudo systemctl start insta-backend.service
-    sudo systemctl start insta-frontend.service
-    ```
+این آموزش یک ورک‌فلو قدرتمند برای پاسخ هوشمند به کامنت‌ها با استفاده از Google Sheets و AI را شرح می‌دهد.
 
-۸. **بررسی وضعیت**:
-   شما می‌توانید با دستورات زیر وضعیت اجرای صحیح سرویس‌ها را بررسی کنید:
-    ```bash
-    sudo systemctl status insta-backend.service
-    sudo systemctl status insta-frontend.service
-    ```
-    اگر همه چیز درست باشد، باید وضعیت "active (running)" را مشاهده کنید.
+#### پیش‌نیاز: لاگین به اینستاگرام
+یک ورک‌فلو مجزا و یک‌بار مصرف برای لاگین بسازید. توصیه می‌شود از روش **Session JSON** استفاده کنید.
 
-## ... (بقیه مستندات فارسی همانند قبل باقی می‌ماند) ...
+```
++-------------------------------------------------------------------+
+| [1] نود Manual Start (شروع دستی)                                  |
++-------------------------------------------------------------------+
+                               |
+                               v
++-------------------------------------------------------------------+
+| [2] نود HTTP Request: "ورود به اینستاگرام"                         |
++-------------------------------------------------------------------+
+|   Request Method:    POST               (حالت: Fixed)            |
+|   URL:               http://localhost:8000/login/session (حالت: Fixed) |
+|   Body Content Type: JSON               (حالت: Fixed)            |
+|   JSON/RAW:                                                       |
+|     - Key: session_data, Value: { "sessionid": "...", ... }     |
++-------------------------------------------------------------------+
+```
+> **دستورالعمل**: این ورک‌فلو را یک بار اجرا کنید تا لاگین شوید.
+
+#### ورک‌فلو پیشرفته: پاسخ هوشمند و قانون‌مند
+
+**دیاگرام کلی ورک‌فلو**:
+`[Cron] -> [Get Posts] -> [Split] -> [Get Comments] -> [Split] -> [Filter] -> [Read Sheet] -> [IF Rule?] -> ... (logic branches)`
+
+**تنظیمات قدم به قدم نودها**:
+
+1.  **نود Cron (شروع زمان‌بندی شده)**: هر ۱۵ دقیقه اجرا شود.
+2.  **نود HTTP Request (دریافت آخرین پست‌ها)**: `action: get_user_posts`, `payload: { "amount": 5 }`.
+3.  **نود HTTP Request (دریافت کامنت‌های پست)**: `action: get_media_comments`, `payload: { "media_id": "{{ $json.pk }}" }`.
+4.  **نود Code (فیلتر کامنت‌های پاسخ داده شده)**: اگر `$json.has_liked` صحیح بود، `return null`.
+5.  **نود Google Sheets (خواندن قوانین از شیت)**: یک ردیف را بر اساس `PostURL` جستجو کنید.
+6.  **نود IF (قانون یافت شد؟)**: بررسی کنید آیا خروجی نود شیت خالی است یا خیر.
+    -   **شاخه FALSE (بدون قانون)**: به نود **OpenAI** متصل شده و یک پاسخ هوشمند تولید می‌کند. سپس با یک نود **HTTP Request** (`action: post_comment`) پاسخ را ارسال می‌کند.
+    -   **شاخه TRUE (قانون یافت شد)**:
+        1.  **نود Code (بررسی تطابق کلمات کلیدی)**: متن کامنت را با کلمات کلیدی شیت مقایسه می‌کند.
+        2.  **نود IF (تطابق دارد؟)**: اگر تطابق وجود داشت، ادامه می‌دهد.
+        3.  **نود HTTP Request (بررسی وضعیت فالوور)**: `action: check_follower_status`, `payload: { "target_user_id": "{{ ... }}" }`.
+        4.  **نود IF (آیا فالوور است؟)**: بر اساس وضعیت فالو و مقدار ستون `FollowerOnly` در شیت تصمیم می‌گیرد.
+        5.  **نودهای HTTP Request نهایی**: بر اساس خروجی IF قبلی، یا `CommentReply` اصلی از شیت را ارسال می‌کنند، یا یک پیام جایگزین برای درخواست فالو.
