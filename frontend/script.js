@@ -1,208 +1,175 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- DOM Elements ---
+    const API_BASE_URL = '/api'; // Use a relative path to go through the Nginx proxy
+    const loginForm = document.getElementById('login-form');
+    const taskForm = document.getElementById('task-form');
+    const taskList = document.getElementById('task-list');
     const loginSection = document.getElementById('login-section');
-    const mainContent = document.getElementById('main-content');
-    const loginStatusEl = document.getElementById('login-status');
-    const logoutBtn = document.getElementById('logout-btn');
+    const dashboardSection = document.getElementById('dashboard-section');
+    const statusDiv = document.getElementById('status');
 
-    const credentialsForm = document.getElementById('credentials-form');
-    const sessionForm = document.getElementById('session-form');
-    const automationForm = document.getElementById('automation-form');
+    // --- Check login status on page load ---
+    checkLoginStatus();
 
-    const automationsList = document.getElementById('automations-list');
-    const refreshTasksBtn = document.getElementById('refresh-tasks-btn');
+    // --- Event Listeners ---
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLogin);
+    }
+    if (taskForm) {
+        taskForm.addEventListener('submit', handleAddTask);
+    }
 
-    const messageArea = document.getElementById('message-area');
-    const loadingSpinner = document.getElementById('loading-spinner');
-
-    const API_BASE_URL = 'http://localhost:8000'; // Adjust if your backend runs elsewhere
-
-    // --- Helper Functions ---
-    const showLoading = (show) => {
-        loadingSpinner.classList.toggle('hidden', !show);
-    };
-
-    const showMessage = (message, isError = false) => {
-        messageArea.textContent = message;
-        messageArea.className = isError ? 'message-error' : 'message-success';
-        setTimeout(() => messageArea.textContent = '', 5000);
-    };
-
-    const updateUIForLoginStatus = (isLoggedIn, username = '') => {
-        if (isLoggedIn) {
-            loginSection.classList.add('hidden');
-            mainContent.classList.remove('hidden');
-            logoutBtn.classList.remove('hidden');
-            loginStatusEl.textContent = `Logged in as ${username}`;
-            loginStatusEl.style.color = '#28a745';
-            fetchActiveAutomations();
-        } else {
-            loginSection.classList.remove('hidden');
-            mainContent.classList.add('hidden');
-            logoutBtn.classList.add('hidden');
-            loginStatusEl.textContent = 'Logged Out';
-            loginStatusEl.style.color = '#e44d26';
-            automationsList.innerHTML = '';
-        }
-    };
-
-    // --- API Calls ---
-    const checkLoginStatus = async () => {
+    // --- Functions ---
+    async function checkLoginStatus() {
         try {
             const response = await fetch(`${API_BASE_URL}/status`);
-            if (!response.ok) throw new Error('Could not connect to server.');
-            const data = await response.json();
-            updateUIForLoginStatus(data.status === 'logged_in', data.username);
-        } catch (error) {
-            showMessage(error.message, true);
-        }
-    };
-
-    const fetchActiveAutomations = async () => {
-        showLoading(true);
-        try {
-            const response = await fetch(`${API_BASE_URL}/automations`);
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.message || 'Failed to fetch automations.');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.status === 'logged_in') {
+                    showDashboard(data.username);
+                    loadTasks();
+                } else {
+                    showLogin();
+                }
+            } else {
+                showLogin();
             }
-            const tasks = await response.json();
-            automationsList.innerHTML = ''; // Clear list
-            Object.entries(tasks).forEach(([taskId, task]) => {
-                const li = document.createElement('li');
-                li.innerHTML = `
-                    <span>Post: <a href="${task.post_url}" target="_blank">${task.post_url.substring(0, 40)}...</a> | Keywords: ${task.keywords.join(', ')}</span>
-                    <button class="delete-btn" data-task-id="${taskId}">Delete</button>
-                `;
-                automationsList.appendChild(li);
-            });
         } catch (error) {
-            showMessage(error.message, true);
-        } finally {
-            showLoading(false);
+            console.error('Error checking login status:', error);
+            statusDiv.textContent = 'Error connecting to the server.';
+            showLogin();
         }
-    };
+    }
 
-    // --- Event Handlers ---
-    credentialsForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        showLoading(true);
-        const username = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
+    async function handleLogin(event) {
+        event.preventDefault();
+        const username = event.target.username.value;
+        const password = event.target.password.value;
+        statusDiv.textContent = 'Logging in...';
+
         try {
             const response = await fetch(`${API_BASE_URL}/login/credentials`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password }),
             });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Login failed.');
-            showMessage(data.message);
-            checkLoginStatus();
-        } catch (error) {
-            showMessage(error.message, true);
-        } finally {
-            showLoading(false);
-        }
-    });
 
-    sessionForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        showLoading(true);
-        const sessionDataRaw = document.getElementById('session-data').value;
-        try {
-            const session_data = JSON.parse(sessionDataRaw);
-            const response = await fetch(`${API_BASE_URL}/login/session`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_data }),
-            });
             const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Login failed.');
-            showMessage(data.message);
-            checkLoginStatus();
+            if (response.ok) {
+                statusDiv.textContent = `Logged in as ${username}`;
+                showDashboard(username);
+                loadTasks();
+            } else {
+                statusDiv.textContent = `Login failed: ${data.message}`;
+            }
         } catch (error) {
-            showMessage('Invalid JSON or login failed: ' + error.message, true);
-        } finally {
-            showLoading(false);
+            console.error('Login error:', error);
+            statusDiv.textContent = 'An error occurred during login.';
         }
-    });
+    }
 
-    logoutBtn.addEventListener('click', async () => {
-        showLoading(true);
-        try {
-            const response = await fetch(`${API_BASE_URL}/logout`, { method: 'POST' });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Logout failed.');
-            showMessage(data.message);
-        } catch (error) {
-            showMessage(error.message, true);
-        } finally {
-            showLoading(false);
-            checkLoginStatus();
-        }
-    });
-
-    automationForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        showLoading(true);
-        const post_url = document.getElementById('post-url').value;
+    async function handleAddTask(event) {
+        event.preventDefault();
+        const postUrl = document.getElementById('postUrl').value;
         const keywords = document.getElementById('keywords').value.split(',').map(k => k.trim());
-        const comment_replies = document.getElementById('comment-replies').value.split('\n');
-        const dm_replies = document.getElementById('dm-replies').value.split('\n');
-        const followers_only = document.getElementById('followers-only').checked;
-        const follow_message = document.getElementById('follow-message').value;
+        const replyMessage = document.getElementById('replyMessage').value;
+        const dmMessage = document.getElementById('dmMessage').value;
+        const mustFollow = document.getElementById('mustFollow').checked;
+
+        const taskData = {
+            post_url: postUrl,
+            keywords: keywords,
+            comment_replies: [replyMessage], // API expects a list
+            dm_replies: [dmMessage],       // API expects a list
+            followers_only: mustFollow,
+        };
 
         try {
             const response = await fetch(`${API_BASE_URL}/automations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ post_url, keywords, comment_replies, dm_replies, followers_only, follow_message }),
+                body: JSON.stringify(taskData),
             });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Failed to start automation.');
-            showMessage(data.message);
-            automationForm.reset();
-            fetchActiveAutomations();
-        } catch (error) {
-            showMessage(error.message, true);
-        } finally {
-            showLoading(false);
-        }
-    });
 
-    automationsList.addEventListener('click', async (e) => {
-        if (e.target.classList.contains('delete-btn')) {
-            const taskId = e.target.dataset.taskId;
-            if (confirm(`Are you sure you want to delete task ${taskId}?`)) {
-                showLoading(true);
-                try {
-                    const response = await fetch(`${API_BASE_URL}/automations/${taskId}`, { method: 'DELETE' });
-                    const data = await response.json();
-                    if (!response.ok) throw new Error(data.message || 'Failed to delete task.');
-                    showMessage(data.message);
-                    fetchActiveAutomations();
-                } catch (error) {
-                    showMessage(error.message, true);
-                } finally {
-                    showLoading(false);
-                }
+            if (response.ok) {
+                statusDiv.textContent = 'Task added successfully!';
+                loadTasks();
+                taskForm.reset();
+            } else {
+                const errorData = await response.json();
+                statusDiv.textContent = `Error adding task: ${errorData.message}`;
             }
+        } catch (error) {
+            console.error('Error adding task:', error);
+            statusDiv.textContent = 'An error occurred while adding the task.';
         }
-    });
+    }
 
-    refreshTasksBtn.addEventListener('click', fetchActiveAutomations);
+    async function loadTasks() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/automations`);
+            if (response.ok) {
+                const tasks = await response.json();
+                renderTasks(tasks);
+            } else {
+                statusDiv.textContent = 'Could not load tasks.';
+            }
+        } catch (error) {
+            console.error('Error loading tasks:', error);
+        }
+    }
 
-    // Tab switching logic
-    document.querySelectorAll('.tab-link').forEach(button => {
-        button.addEventListener('click', () => {
-            document.querySelectorAll('.tab-link').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            button.classList.add('active');
-            document.getElementById(button.dataset.tab).classList.add('active');
+    function renderTasks(tasks) {
+        taskList.innerHTML = ''; // Clear existing list
+        for (const taskId in tasks) {
+            const task = tasks[taskId];
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><a href="${task.post_url}" target="_blank">${task.post_url.substring(0, 40)}...</a></td>
+                <td>${task.keywords.join(', ')}</td>
+                <td>${task.is_running ? 'Running' : 'Stopped'}</td>
+                <td><button class="delete-btn" data-task-id="${taskId}">Delete</button></td>
+            `;
+            taskList.appendChild(row);
+        }
+
+        // Add event listeners to delete buttons
+        document.querySelectorAll('.delete-btn').forEach(button => {
+            button.addEventListener('click', handleDeleteTask);
         });
-    });
+    }
 
-    // --- Initial Load ---
-    checkLoginStatus();
+    async function handleDeleteTask(event) {
+        const taskId = event.target.dataset.taskId;
+        if (!confirm(`Are you sure you want to delete task ${taskId}?`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/automations/${taskId}`, {
+                method: 'DELETE',
+            });
+
+            if (response.ok) {
+                statusDiv.textContent = `Task ${taskId} deleted.`;
+                loadTasks();
+            } else {
+                const errorData = await response.json();
+                statusDiv.textContent = `Error deleting task: ${errorData.message}`;
+            }
+        } catch (error) {
+            console.error('Error deleting task:', error);
+            statusDiv.textContent = 'An error occurred while deleting the task.';
+        }
+    }
+
+    function showDashboard(username) {
+        loginSection.style.display = 'none';
+        dashboardSection.style.display = 'block';
+        document.getElementById('username-display').textContent = username;
+    }
+
+    function showLogin() {
+        loginSection.style.display = 'block';
+        dashboardSection.style.display = 'none';
+    }
 });

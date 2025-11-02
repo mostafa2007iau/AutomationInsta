@@ -27,7 +27,7 @@ app.add_middleware(
 async def read_root():
     return {"message": "Welcome to the Instagram Automation API!"}
 
-from .instagram_client import InstagramClient
+from instagram_client import InstagramClient
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 
