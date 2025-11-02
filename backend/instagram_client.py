@@ -173,33 +173,41 @@ class AutomationTask:
         """
         Processes a single comment based on the automation rules.
         """
-        # 1. Check if comment has keywords and has not been processed
-        if any(keyword in comment.text.lower() for keyword in self.keywords) and comment.pk not in self.processed_comments:
-            user_pk = str(comment.user.pk)
+        # 1. Skip if already replied to (liked by us) or processed in this session
+        if comment.has_liked or comment.pk in self.processed_comments:
+            return
 
-            # 2. Check follower status if required
-            if self.followers_only:
-                our_followers = await self.parent_client.get_followers()
-                if user_pk not in our_followers:
-                    # Send DM asking to follow
-                    if self.follow_message:
-                        self.cl.direct_send(self.follow_message, user_ids=[user_pk])
-                    self.processed_comments.add(comment.pk)
-                    return # Stop processing this comment
+        # Always mark as processed to avoid re-checking in the future
+        self.processed_comments.add(comment.pk)
 
-            # 3. Reply to the comment
-            if self.comment_replies:
-                reply_text = random.choice(self.comment_replies)
-                self.cl.comment_reply(comment.pk, reply_text)
+        # 2. Check if comment contains keywords
+        if not any(keyword in comment.text.lower() for keyword in self.keywords):
+            return # No keywords found, stop processing
 
-            # 4. Send a DM
-            if self.dm_replies:
-                dm_text = random.choice(self.dm_replies)
-                self.cl.direct_send(dm_text, user_ids=[user_pk])
+        user_pk = str(comment.user.pk)
 
-            # 5. Mark as processed
-            self.processed_comments.add(comment.pk)
-            print(f"Processed comment {comment.pk} from user {comment.user.username}")
+        # 3. Check follower status if required
+        if self.followers_only:
+            our_followers = await self.parent_client.get_followers()
+            if user_pk not in our_followers:
+                # Send DM asking to follow
+                if self.follow_message:
+                    self.cl.direct_send(self.follow_message, user_ids=[user_pk])
+                return # Stop processing this comment
+
+        # 4. Reply to the comment with a human-like delay
+        if self.comment_replies:
+            await asyncio.sleep(random.uniform(5, 15)) # Wait 5-15 seconds
+            reply_text = random.choice(self.comment_replies)
+            self.cl.comment_reply(comment.pk, reply_text)
+
+        # 5. Send a DM with a human-like delay
+        if self.dm_replies:
+            await asyncio.sleep(random.uniform(5, 15)) # Wait 5-15 seconds
+            dm_text = random.choice(self.dm_replies)
+            self.cl.direct_send(dm_text, user_ids=[user_pk])
+
+        print(f"Processed comment {comment.pk} from user {comment.user.username}")
 
 
     async def run(self):
@@ -215,8 +223,9 @@ class AutomationTask:
                 for comment in comments:
                     await self._process_comment(comment)
 
-                # Wait for a while before checking for new comments again
-                await asyncio.sleep(60) # Check every 60 seconds
+                # Wait for a variable duration before checking again to simulate human behavior
+                sleep_duration = random.uniform(60, 100)
+                await asyncio.sleep(sleep_duration)
             except Exception as e:
                 print(f"An error occurred in automation task: {e}")
                 # Optional: stop the task on error or just wait and retry
