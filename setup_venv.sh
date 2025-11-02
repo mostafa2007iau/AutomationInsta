@@ -35,6 +35,10 @@ echo "   For example, with Python:"
 echo "   python3 -m http.server 8080 --directory frontend"
 echo ""
 echo "4. Remember to update the API_BASE_URL in 'frontend/script.js' if you use different ports."
+echo ""
+echo "--- Making the Service Persistent ---"
+echo "To ensure the application runs automatically after a server reboot, you should set it up as a systemd service."
+echo "Template files and detailed instructions are available in the 'deployment' directory and the main README.md file."
 echo "--------------------------------------------------------------------"
 
 # The venv remains active in the current shell after sourcing,

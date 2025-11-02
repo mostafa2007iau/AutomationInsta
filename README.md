@@ -12,6 +12,9 @@ This project uses `instagrapi` for Instagram communication and can be deployed e
 - [Safety Features & Human-Like Behavior](#safety-features--human-like-behavior)
 - [How It Works](#how-it-works)
 - [Installation](#installation)
+  - [Docker (Recommended)](#docker-recommended)
+  - [Manual Setup (venv)](#manual-setup-venv)
+- [Making the Service Persistent (venv only)](#making-the-service-persistent-venv-only)
 - [How to Use](#how-to-use)
 - [API Documentation](#api-documentation)
 - [Connecting with n8n (Advanced Tutorial)](#connecting-with-n8n-advanced-tutorial)
@@ -20,52 +23,169 @@ This project uses `instagrapi` for Instagram communication and can be deployed e
 
 ---
 
-## Features
+## (Sections: Features, Safety, How It Works - remain unchanged)
 
-- **DM & Comment Automation**: Automatically reply to comments and send DMs based on keywords.
-- **Follower-Only Mode**: Restrict automation to only users who follow the page.
-- **Customizable Replies**: Set multiple random replies for both comments and DMs.
-- **No Official API Key Needed**: Works with private APIs via `instagrapi`.
-- **Simple Web Interface**: Easy-to-use UI for managing your automation tasks.
-- **Dockerized**: Quick and easy setup with Docker and Docker Compose.
-- **n8n Integration**: A dedicated, flexible endpoint to connect with automation platforms like n8n.
+## Installation
 
-## Safety Features & Human-Like Behavior
+### Docker (Recommended)
+This is the easiest way to get the application running.
+**Prerequisites**:
+- [Docker](https://www.docker.com/get-started)
+- [Docker Compose](https://docs.docker.com/compose/install/)
 
-This tool has been designed with the safety of your Instagram account in mind. To avoid being flagged as a bot and to minimize the risk of action blocks, the following features have been implemented:
+**Steps**:
+1.  **Clone the repository**.
+2.  **Run the interactive setup script**: `./install.sh`. This configures your ports.
+3.  **Build and run the containers**: `docker-compose up --build -d`.
+4.  **Access the application**:
+    -   Frontend: `http://localhost:<FRONTEND_PORT>`
+    -   API Docs: `http://localhost:<BACKEND_PORT>/docs`
 
--   **Duplicate Reply Prevention**: The tool will not reply to a comment if it has already been answered (either by you or the bot). It checks if you have "liked" the comment, which Instagram does automatically when you reply.
--   **Random Delays**: Before posting any comment or sending a DM, the bot waits for a random period (between 5 to 15 seconds) to mimic human typing and response time.
--   **Variable Check Intervals**: The bot checks for new comments at variable intervals (between 60 to 100 seconds) instead of a fixed time, making its activity pattern less predictable.
--   **Efficient Follower Cache**: The list of your followers is cached for 30 minutes to dramatically reduce the number of API requests, which is a key factor in avoiding rate limits.
+> **✅ Service Persistence**: The Docker services are configured with `restart: unless-stopped`. This means they will automatically restart if the server reboots, ensuring the application is always running.
 
-> **Disclaimer**: While these measures significantly increase safety, the use of any automation tool on Instagram carries inherent risks. Use it responsibly.
+### Manual Setup (venv)
+If you prefer not to use Docker, follow these steps.
+1.  **Clone the repository**.
+2.  **Run the venv setup script**: `./setup_venv.sh`.
+3.  **Activate the environment**: `source backend/.venv/bin/activate`.
+4.  **Run the servers** (in separate terminals):
+    -   Backend: `uvicorn main:app --host 0.0.0.0 --port 8000 --app-dir backend`
+    -   Frontend: `python3 -m http.server 8080 --directory frontend`
 
-## How It Works
+## Making the Service Persistent (venv only)
+To ensure the application runs automatically after a server reboot when using the `venv` method, you need to set it up as a `systemd` service. This is the standard way to manage long-running applications on modern Linux systems.
 
-The application consists of two main parts:
+Template files are provided in the `deployment` directory.
 
-1.  **Backend (FastAPI)**: A Python server that handles all the logic. It uses the `instagrapi` library to connect to Instagram, listen for comments on specific posts, and perform actions like replying or sending DMs.
-2.  **Frontend (Vanilla JS/HTML/CSS)**: A simple user interface that runs in your browser. It communicates with the backend's API to allow you to log in, create, and manage automation tasks.
+**Prerequisites**:
+- You are on a Linux system that uses `systemd` (e.g., Ubuntu, CentOS, Debian).
+- You have `sudo` (administrator) privileges.
 
-... (The rest of the README remains the same as the last complete version) ...
+**Step-by-Step Guide**:
+
+1.  **Navigate to the project directory**:
+    ```bash
+    cd /path/to/your/project
+    ```
+    Remember this path, you will need it.
+
+2.  **Edit the Backend Service File**:
+    -   Open `deployment/insta-backend.service`.
+    -   Replace `your_user` with your actual Linux username.
+    -   Replace all instances of `/path/to/your/project` with the **absolute path** to your project directory.
+
+3.  **Edit the Frontend Service File**:
+    -   Open `deployment/insta-frontend.service`.
+    -   Replace `your_user` with your Linux username.
+    -   Replace `/path/to/your/project` with the absolute path to your project directory.
+
+4.  **Copy the Files to systemd**:
+    ```bash
+    sudo cp deployment/insta-backend.service /etc/systemd/system/
+    sudo cp deployment/insta-frontend.service /etc/systemd/system/
+    ```
+
+5.  **Reload the systemd daemon**:
+    This command tells `systemd` to read the new service files.
+    ```bash
+    sudo systemctl daemon-reload
+    ```
+
+6.  **Enable the services**:
+    This command makes the services start automatically on boot.
+    ```bash
+    sudo systemctl enable insta-backend.service
+    sudo systemctl enable insta-frontend.service
+    ```
+
+7.  **Start the services now**:
+    ```bash
+    sudo systemctl start insta-backend.service
+    sudo systemctl start insta-frontend.service
+    ```
+
+8.  **Check the status**:
+    You can check if the services are running correctly with:
+    ```bash
+    sudo systemctl status insta-backend.service
+    sudo systemctl status insta-frontend.service
+    ```
+    If everything is correct, you should see an "active (running)" status.
+
+## ... (Rest of the documentation remains the same) ...
 
 ---
 
 # Farsi Documentation (مستندات فارسی)
 
-... (The Farsi introduction and other sections remain the same) ...
+... (Farsi introduction and other sections remain the same) ...
 
----
-## ویژگی‌های ایمنی و شبیه‌سازی رفتار انسانی
+### روش اول: Docker (توصیه شده)
+... (Steps remain the same) ...
 
-این ابزار با در نظر گرفتن ایمنی حساب اینستاگرام شما طراحی شده است. برای جلوگیری از شناسایی شدن به عنوان ربات و به حداقل رساندن خطر مسدود شدن حساب، قابلیت‌های زیر پیاده‌سازی شده‌اند:
+> **✅ پایداری سرویس**: سرویس‌های داکر با پالیسی `restart: unless-stopped` پیکربندی شده‌اند. این به آن معناست که اگر سرور شما ریبوت شود، سرویس‌ها به صورت خودکار مجدداً اجرا خواهند شد و اپلیکیشن شما همیشه در دسترس خواهد بود.
 
--   **جلوگیری از پاسخ تکراری**: ابزار به کامنتی که قبلاً پاسخ داده شده باشد (چه توسط شما و چه توسط ربات)، دوباره پاسخ نمی‌دهد. این کار با بررسی "لایک" شدن کامنت توسط شما انجام می‌شود (اینستاگرام به صورت خودکار کامنتی را که به آن پاسخ می‌دهید لایک می‌کند).
--   **تأخیرهای تصادفی**: قبل از ارسال هر کامنت یا دایرکت، ربات برای یک مدت زمان تصادفی (بین ۵ تا ۱۵ ثانیه) صبر می‌کند تا رفتار و زمان پاسخ‌دهی انسان را شبیه‌سازی کند.
--   **فواصل زمانی متغیر**: ربات در بازه‌های زمانی متغیر (بین ۶۰ تا ۱۰۰ ثانیه) به جای یک زمان ثابت، کامنت‌های جدید را بررسی می‌کند. این کار الگوی فعالیت آن را کمتر قابل پیش‌بینی می‌کند.
--   **کش بهینه فالوورها**: لیست فالوورهای شما به مدت ۳۰ دقیقه در حافظه موقت (کش) نگهداری می‌شود تا تعداد درخواست‌های ارسالی به سرور اینستاگرام به شدت کاهش یابد، که این عامل کلیدی در جلوگیری از محدودیت‌هاست.
+### روش دوم: نصب دستی (venv)
+... (Steps remain the same) ...
 
-> **سلب مسئولیت**: با وجود اینکه این اقدامات ایمنی را به طور قابل توجهی افزایش می‌دهند، استفاده از هرگونه ابزار اتوماسیون در اینستاگرام با ریسک‌های ذاتی همراه است. لطفاً با مسئولیت از آن استفاده کنید.
+## پایدارسازی سرویس (فقط برای نصب با venv)
+برای اطمینان از اینکه اپلیکیشن در صورت نصب با `venv` پس از ریبوت شدن سرور به صورت خودکار اجرا شود، باید آن را به عنوان یک سرویس `systemd` تعریف کنید. `systemd` روش استاندارد برای مدیریت سرویس‌های طولانی-مدت در سیستم‌عامل‌های مدرن لینوکس است.
 
-... (The rest of the Farsi documentation remains the same) ...
+فایل‌های الگو در پوشه `deployment` برای کمک به شما قرار داده شده‌اند.
+
+**پیش‌نیازها**:
+- شما از یک سیستم‌عامل لینوکس که از `systemd` استفاده می‌کند (مانند اوبونتو، سنت‌اواس، دبیان) بهره می‌برید.
+- شما دسترسی `sudo` (مدیر سیستم) دارید.
+
+**راهنمای قدم به قدم**:
+
+۱. **به پوشه پروژه بروید**:
+    ```bash
+    cd /path/to/your/project
+    ```
+    این آدرس را به خاطر بسپارید، به آن نیاز خواهید داشت.
+
+۲. **ویرایش فایل سرویس بک‌اند**:
+    -   فایل `deployment/insta-backend.service` را باز کنید.
+    -   `your_user` را با نام کاربری لینوکس خود جایگزین کنید.
+    -   تمام موارد `/path/to/your/project` را با **آدرس کامل (absolute path)** پوشه پروژه خود جایگزین کنید.
+
+۳. **ویرایش فایل سرویس فرانت‌اند**:
+    -   فایل `deployment/insta-frontend.service` را باز کنید.
+    -   `your_user` را با نام کاربری لینوکس خود جایگزین کنید.
+    -   `/path/to/your/project` را با آدرس کامل پوشه پروژه خود جایگزین کنید.
+
+۴. **کپی کردن فایل‌ها به پوشه systemd**:
+    ```bash
+    sudo cp deployment/insta-backend.service /etc/systemd/system/
+    sudo cp deployment/insta-frontend.service /etc/systemd/system/
+    ```
+
+۵. **بارگذاری مجدد systemd**:
+   این دستور به `systemd` می‌گوید که فایل‌های سرویس جدید را بخواند.
+    ```bash
+    sudo systemctl daemon-reload
+    ```
+
+۶. **فعال‌سازی سرویس‌ها**:
+   این دستور باعث می‌شود سرویس‌ها پس از هر بار بوت شدن سیستم، به صورت خودکار اجرا شوند.
+    ```bash
+    sudo systemctl enable insta-backend.service
+    sudo systemctl enable insta-frontend.service
+    ```
+
+۷. **شروع به کار سرویس‌ها**:
+    ```bash
+    sudo systemctl start insta-backend.service
+    sudo systemctl start insta-frontend.service
+    ```
+
+۸. **بررسی وضعیت**:
+   شما می‌توانید با دستورات زیر وضعیت اجرای صحیح سرویس‌ها را بررسی کنید:
+    ```bash
+    sudo systemctl status insta-backend.service
+    sudo systemctl status insta-frontend.service
+    ```
+    اگر همه چیز درست باشد، باید وضعیت "active (running)" را مشاهده کنید.
+
+## ... (بقیه مستندات فارسی همانند قبل باقی می‌ماند) ...

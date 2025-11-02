@@ -62,5 +62,7 @@ echo ""
 echo "3. Once running, you can access the application at:"
 echo "   Frontend: http://localhost:${FRONTEND_PORT}"
 echo "   Backend API Docs: http://localhost:${BACKEND_PORT}/docs"
+echo ""
+echo "✅ Persistence: Thanks to the 'restart: unless-stopped' policy, these services will automatically restart if the server reboots."
 echo "------------------------------------------------"
 exit 0

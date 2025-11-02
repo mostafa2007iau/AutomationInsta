@@ -1,0 +1,21 @@
+[Unit]
+Description=Instagram Automation Backend Service
+After=network.target
+
+[Service]
+# Replace 'your_user' with the user you want to run the service as
+User=your_user
+
+# Replace '/path/to/your/project' with the absolute path to the project directory
+WorkingDirectory=/path/to/your/project/backend
+
+# Command to start the service
+# It directly calls the uvicorn executable from the virtual environment
+ExecStart=/path/to/your/project/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+
+# Restart the service if it fails
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
