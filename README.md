@@ -21,9 +21,9 @@ This project uses `instagrapi` for Instagram communication and can be deployed e
   - [Authentication](#authentication)
   - [Automation Management](#automation-management)
   - [n8n Integration](#n8n-integration)
-- [Connecting with n8n](#connecting-with-n8n)
-  - [Workflow 1: Login to Instagram (Run Once)](#workflow-1-login-to-instagram-run-once)
-  - [Workflow 2: AI-Powered Comment Replies (Scheduled)](#workflow-2-ai-powered-comment-replies-scheduled)
+- [Connecting with n8n (Advanced Tutorial)](#connecting-with-n8n-advanced-tutorial)
+  - [Prerequisite: Logging In](#prerequisite-logging-in)
+  - [Advanced Workflow: Smart, Rule-Based Comment Replies](#advanced-workflow-smart-rule-based-comment-replies)
 - [Project Structure](#project-structure)
 - [Farsi Documentation (مستندات فارسی)](#farsi-documentation-مستندات-فارسی)
 
@@ -37,7 +37,7 @@ This project uses `instagrapi` for Instagram communication and can be deployed e
 - **No Official API Key Needed**: Works with private APIs via `instagrapi`.
 - **Simple Web Interface**: Easy-to-use UI for managing your automation tasks.
 - **Dockerized**: Quick and easy setup with Docker and Docker Compose.
-- **n8n Integration**: A dedicated endpoint to connect with automation platforms like n8n.
+- **n8n Integration**: A dedicated, flexible endpoint to connect with automation platforms like n8n.
 
 ## How It Works
 
@@ -155,7 +155,6 @@ The API is documented with Swagger UI, available at `/docs`.
 
 -   `POST /login/credentials`: Login with username and password.
 -   `POST /login/session`: Login with session JSON.
--   `POST /logout`: Logout from the current session.
 -   `GET /status`: Check login status.
 
 ### Automation Management
@@ -177,179 +176,311 @@ The API is documented with Swagger UI, available at `/docs`.
     ```
 
     **Supported Actions**:
-    1.  **`send_dm`**:
+    1.  `send_dm`:
         -   **Payload**: `{ "user_id": "12345", "text": "Hello!" }`
-    2.  **`post_comment`**:
+    2.  `post_comment`:
         -   **Payload**: `{ "media_id": "12345", "text": "Great post!" }`
-    3.  **`get_media_comments`**:
+    3.  `get_media_comments`:
         -   **Payload**: `{ "media_id": "12345", "amount": 30 }`
+    4.  `get_user_posts`:
+        -   **Payload**: `{ "user_id": 12345, "amount": 10 }` (Note: `user_id` is the numeric PK, not the username)
+    5.  `check_follower_status`:
+        -   **Payload**: `{ "target_user_id": 12345 }`
 
-## Connecting with n8n
+## Connecting with n8n (Advanced Tutorial)
 
-You can use the dedicated n8n endpoint (`/api/n8n/action`) to build powerful, custom automation workflows. Below are two essential workflows to get you started.
+This tutorial guides you through creating a powerful, rule-based workflow that intelligently responds to comments on your latest posts using Google Sheets and an AI agent.
 
-### Workflow 1: Login to Instagram (Run Once)
+### Prerequisite: Logging In
 
-Before running any other workflows, you must log in to your Instagram account via the API. This workflow only needs to be run **once** successfully. The application will maintain the session for future actions.
+Before you can run the main workflow, you **must** log in to your Instagram account via the API. This is a **one-time setup**. The application will keep you logged in for all future actions.
 
-**Choose one of the two methods below.**
+**Create a simple, separate workflow in n8n for this purpose.**
 
-#### Method A: Login with Credentials
-
-```
-+----------------------------------------------+
-| [1] Manual Start                             |
-|     (Executes the workflow once)             |
-+----------------------------------------------+
-                  |
-                  |
-                  v
-+----------------------------------------------+
-| [2] Login with Credentials (HTTP Request)    |
-+----------------------------------------------+
-| Method:         POST                         |
-| URL:            http://localhost:8000/login/credentials |
-| Body Type:      JSON                         |
-| Body:                                        |
-|   {                                          |
-|     "username": "your_instagram_username",   |
-|     "password": "your_instagram_password"    |
-|   }                                          |
-+----------------------------------------------+
-```
-
-#### Method B: Login with Session JSON
-
-This is the recommended method if you have your session data.
+#### Method: Login with Session JSON (Recommended)
 
 ```
-+----------------------------------------------+
-| [1] Manual Start                             |
-|     (Executes the workflow once)             |
-+----------------------------------------------+
-                  |
-                  |
-                  v
-+----------------------------------------------+
-| [2] Login with Session (HTTP Request)        |
-+----------------------------------------------+
-| Method:         POST                         |
-| URL:            http://localhost:8000/login/session |
-| Body Type:      JSON                         |
-| Body:                                        |
-|   {                                          |
-|     "session_data": {                        |
-|       "sessionid": "...",                    |
-|       "csrftoken": "...",                    |
-|       "...": "..."                           |
-|     }                                        |
-|   }                                          |
-+----------------------------------------------+
++-------------------------------------------------------------------+
+| [1] Manual Start Node                                             |
+| Description: Executes the workflow manually just once.            |
++-------------------------------------------------------------------+
+                               |
+                               v
++-------------------------------------------------------------------+
+| [2] HTTP Request Node: "Login to Instagram"                       |
++-------------------------------------------------------------------+
+| Parameters:                                                       |
+|   Request Method:    POST               (Mode: Fixed)             |
+|   URL:               http://localhost:8000/login/session (Mode: Fixed) |
+|   Authentication:    None                                         |
+|   Body Content Type: JSON               (Mode: Fixed)             |
+|   JSON/RAW Parameters:                                            |
+|     - Key: session_data               (Mode: Fixed)             |
+|     - Value: (Paste your full JSON object here) (Mode: Fixed)     |
+|       {                                                           |
+|         "sessionid": "...",                                       |
+|         "ds_user_id": "...",                                       |
+|         "csrftoken": "...",                                        |
+|         "rur": "...",                                              |
+|         "mid": "..."                                               |
+|       }                                                           |
++-------------------------------------------------------------------+
 ```
+> **Action**: Create this workflow, paste your complete session JSON data, and click "Execute Workflow". If it runs successfully, you are logged in. You do not need to run this again unless the session expires.
 
-After executing either of these workflows, the backend will be logged in and ready to handle automation tasks.
+### Advanced Workflow: Smart, Rule-Based Comment Replies
 
-### Workflow 2: AI-Powered Comment Replies (Scheduled)
-
-This workflow runs on a schedule, fetches new comments from a specific post, uses an AI agent to generate intelligent replies, and posts them back to Instagram.
+This workflow will:
+1.  Run on a schedule.
+2.  Fetch your latest Instagram posts.
+3.  For each post, fetch its comments.
+4.  Filter out comments that you have already replied to.
+5.  Check a Google Sheet for a matching rule (based on post link, keywords, and follower status).
+6.  If a rule matches, reply using the text from the Google Sheet.
+7.  If not, generate a reply using an AI agent.
 
 #### Overall Workflow Diagram
 
 ```
-+--------------+   +-------------------+   +-----------------+   +------------------+   +--------------------+
-| [1] Cron     |-->| [2] Get Comments  |-->| [3] Split Items |-->| [4] AI Agent     |-->| [5] Post Reply     |
-| (Every 5m)   |   | (HTTP Request)    |   | (SplitInBatches)|   | (e.g., OpenAI)   |   | (HTTP Request)     |
-+--------------+   +-------------------+   +-----------------+   +------------------+   +--------------------+
+[Cron] -> [Get Posts] -> [Split Posts] -> [Get Comments] -> [Split Comments] -> [Filter Replied] -> [Read Sheet] -> [IF: Rule Found?]
+                                                                                                                   |
+                                                                                               +-------------------+-------------------+
+                                                                                               | (TRUE)                            | (FALSE)
+                                                                                               v                                   v
+                                                                        [Code: Keyword Match?] -> [IF: Keyword Match?]         [AI Agent]
+                                                                                               |         | (TRUE)                  |
+                                                                                               |         v                         |
+                                                                          (FALSE)|         [Check Follower] -> [IF: Follower?]   |
+                                                                                               |         | (TRUE)      | (FALSE)   |
+                                                                                               |         v             v           |
+                                                                                               |   [Reply Custom]  [Reply "Follow"]|
+                                                                                               |         |             |           |
+                                                                                               +---------+-------------+-----------+
+                                                                                                         |
+                                                                                                         v
+                                                                                                     [Post AI Reply]
 ```
 
 #### Step-by-Step Node Configuration
 
-**Step 1: Cron Node (Trigger)**
-This node starts the workflow on a schedule.
+*(This is a detailed guide. Each step corresponds to a node in n8n.)*
+
+**1. Cron Node: "Schedule Trigger"**
+*This starts the workflow automatically.*
+```
++-------------------------------------------------------------------+
+| [1] Cron Node                                                     |
++-------------------------------------------------------------------+
+| Parameters:                                                       |
+|   Mode:           Every X Minutes     (Mode: Fixed)             |
+|   Minutes:        15                  (Mode: Fixed)             |
++-------------------------------------------------------------------+
+```
+
+**2. HTTP Request Node: "Get Latest Posts"**
+*Fetches the most recent posts from your own Instagram account.*
+```
++-------------------------------------------------------------------+
+| [2] HTTP Request Node: "Get Latest Posts"                         |
++-------------------------------------------------------------------+
+| Parameters:                                                       |
+|   Request Method:    POST               (Mode: Fixed)             |
+|   URL:               http://localhost:8000/api/n8n/action (Mode: Fixed) |
+|   Body Content Type: JSON               (Mode: Fixed)             |
+|   JSON/RAW Parameters:                                            |
+|     - Key: action                   (Mode: Fixed)             |
+|     - Value: get_user_posts         (Mode: Fixed)             |
+|     - Key: payload                  (Mode: Fixed)             |
+|     - Value: { "amount": 5 }        (Mode: Fixed)             |
+| Options:                                                          |
+|   Split Into:     Items               (Mode: Fixed)             |
+|   Path:           data                (Mode: Fixed)             |
++-------------------------------------------------------------------+
+```
+
+**3. HTTP Request Node: "Get Comments for Post"**
+*For each post from the previous step, this fetches its comments.*
+```
++-------------------------------------------------------------------+
+| [3] HTTP Request Node: "Get Comments for Post"                    |
++-------------------------------------------------------------------+
+| Parameters:                                                       |
+|   Request Method:    POST               (Mode: Fixed)             |
+|   URL:               http://localhost:8000/api/n8n/action (Mode: Fixed) |
+|   Body Content Type: JSON               (Mode: Fixed)             |
+|   JSON/RAW Parameters:                                            |
+|     - Key: action                   (Mode: Fixed)             |
+|     - Value: get_media_comments     (Mode: Fixed)             |
+|     - Key: payload                  (Mode: Expression)        |
+|     - Value: { "media_id": "{{ $json.pk }}" }                   |
+| Options:                                                          |
+|   Split Into:     Items               (Mode: Fixed)             |
+|   Path:           data                (Mode: Fixed)             |
++-------------------------------------------------------------------+
+```
+> **Data Flow**: The `media_id` is dynamically taken from the output of the "Get Latest Posts" node. `{{ $json.pk }}` refers to the 'pk' field of each post.
+
+**4. Code Node: "Filter Out Replied Comments"**
+*This simple code node checks if you have already replied to a comment and stops the workflow for that comment if you have.*
+```
++-------------------------------------------------------------------+
+| [4] Code Node: "Filter Out Replied Comments"                      |
++-------------------------------------------------------------------+
+| Language:       JavaScript                                        |
+| Code:                                                             |
+|   const hasReplied = $json.has_liked; // A proxy for replies      |
+|   if (hasReplied) {                                               |
+|     return null; // Stop execution for this item                  |
+|   }                                                               |
+|   return $json; // Continue if not replied                        |
++-------------------------------------------------------------------+
+```
+
+**5. Google Sheets Node: "Read Rules from Sheet"**
+*This node looks up rules in a spreadsheet.*
+> **Setup**: Create a Google Sheet with columns: `PostURL`, `Keywords`, `FollowerOnly`, `CommentReply`, `DMReply`.
 
 ```
-+----------------------------------------------+
-| [1] Cron (Schedule Trigger)                  |
-+----------------------------------------------+
-| Mode:           Every X Minutes              |
-| Minutes:        5                            |
-+----------------------------------------------+
++-------------------------------------------------------------------+
+| [5] Google Sheets Node: "Read Rules from Sheet"                   |
++-------------------------------------------------------------------+
+| Parameters:                                                       |
+|   Authentication:    Connect your Google Account                  |
+|   Resource:          Row                                          |
+|   Operation:         Lookup                                       |
+|   Spreadsheet:       Select your spreadsheet                      |
+|   Sheet:             Select your sheet                            |
+|   Column To Match On: PostURL             (Mode: Fixed)             |
+|   Value To Match:    {{ "https://www.instagram.com/p/" + $('Get Comments for Post').json.code + "/" }} (Mode: Expression) |
++-------------------------------------------------------------------+
 ```
 
-**Step 2: Get Comments Node (HTTP Request)**
-This node calls our API to fetch the latest comments for a specific post.
-
+**6. IF Node: "Rule Found?"**
+*Checks if the Google Sheet node found a matching rule.*
 ```
-+----------------------------------------------+
-| [2] Get Comments (HTTP Request)              |
-+----------------------------------------------+
-| Method:         POST                         |
-| URL:            http://localhost:8000/api/n8n/action |
-| Body Type:      JSON                         |
-| Body:                                        |
-|   {                                          |
-|     "action": "get_media_comments",           |
-|     "payload": {                             |
-|       "media_id": "YOUR_POST_MEDIA_ID"       |
-|     }                                        |
-|   }                                          |
-| Options:                                     |
-|   Split Into:   Items                        |
-|   Path:         data                         |
-+----------------------------------------------+
++-------------------------------------------------------------------+
+| [6] IF Node: "Rule Found?"                                        |
++-------------------------------------------------------------------+
+| Conditions:                                                       |
+|   - Condition 1:                                                  |
+|     - Value 1: {{ $('Read Rules from Sheet').json.Keywords }} (Mode: Expression)|
+|     - Operation: Is Not Empty                                     |
++-------------------------------------------------------------------+
 ```
-> **Note**: `media_id` is the unique identifier for an Instagram post (e.g., `319_12345...`). You can find this using various online tools or from the post's URL structure. The `Split Into: Items` option automatically processes each comment individually in the next steps.
 
-**Step 3: AI Agent Node (e.g., OpenAI)**
-This node receives the comment text and generates a human-like reply.
+From this IF node, there are two branches: **TRUE** (a rule was found) and **FALSE** (no rule found).
 
+#### TRUE Branch (Rule-Based Reply)
+
+**7a. Code Node: "Check if Keywords Match"**
+*If a rule was found, this node checks if the comment text contains any of the keywords from the sheet.*
 ```
-+----------------------------------------------+
-| [4] OpenAI (AI Agent)                        |
-+----------------------------------------------+
-| Resource:       Chat                         |
-| Model:          gpt-4o                       |
-| Prompt:                                      |
-|   Based on this Instagram comment:           |
-|   "{{ $json.text }}"                         |
-|                                              |
-|   Write a friendly and engaging reply.       |
-|   Keep it concise and positive.              |
-|                                              |
-+----------------------------------------------+
++-------------------------------------------------------------------+
+| [7a] Code Node: "Check if Keywords Match"                         |
++-------------------------------------------------------------------+
+| Language:       JavaScript                                        |
+| Code:                                                             |
+|   const keywords = $('Read Rules from Sheet').json.Keywords.split(','); |
+|   const commentText = $('Filter Out Replied Comments').json.text.toLowerCase(); |
+|   const match = keywords.some(k => commentText.includes(k.trim())); |
+|   return { ...$item.json, ruleMatched: match };                   |
++-------------------------------------------------------------------+
 ```
-> The `{{ $json.text }}` expression dynamically inserts the text from the comment received in the previous step.
 
-**Step 4: Post Reply Node (HTTP Request)**
-This final node sends the AI-generated reply back to our API to be posted on Instagram.
-
+**8a. IF Node: "Keyword Match?"**
+*Connect this to the output of the previous Code node. It proceeds only if `ruleMatched` is true.*
 ```
-+----------------------------------------------+
-| [5] Post Reply (HTTP Request)                |
-+----------------------------------------------+
-| Method:         POST                         |
-| URL:            http://localhost:8000/api/n8n/action |
-| Body Type:      JSON                         |
-| Body:                                        |
-|   {                                          |
-|     "action": "post_comment",                 |
-|     "payload": {                             |
-|       "media_id": "{{ $json.media.pk }}",    |
-|       "text": "{{ $('OpenAI').json.choices[0].message.content }}" |
-|     }                                        |
-|   }                                          |
-+----------------------------------------------+
++-------------------------------------------------------------------+
+| [8a] IF Node: "Keyword Match?"                                    |
++-------------------------------------------------------------------+
+| Conditions:                                                       |
+|   - Condition 1:                                                  |
+|     - Value 1: {{ $json.ruleMatched }} (Mode: Expression)         |
+|     - Operation: Is True                                          |
++-------------------------------------------------------------------+
 ```
-> **Expressions Explained**:
-> - `{{ $json.media.pk }}`: This retrieves the `pk` (same as `media_id`) of the post from the original comment data.
-> - `{{ $('OpenAI').json.choices[0].message.content }}`: This retrieves the generated text content from the output of the OpenAI node.
 
-By setting up this workflow, you create a fully automated and intelligent comment management system.
+**9a. HTTP Request Node: "Check Follower Status"**
+*Connect to the **TRUE** output of "Keyword Match?". This checks if the commenter follows you.*
+```
++-------------------------------------------------------------------+
+| [9a] HTTP Request: "Check Follower Status"                        |
++-------------------------------------------------------------------+
+| Parameters:                                                       |
+|   Request Method:    POST               (Mode: Fixed)             |
+|   URL:               http://localhost:8000/api/n8n/action (Mode: Fixed) |
+|   Body Content Type: JSON               (Mode: Fixed)             |
+|   Body:                                                           |
+|     - action: check_follower_status     (Mode: Fixed)             |
+|     - payload: { "target_user_id": "{{ $('Filter Out Replied Comments').json.user.pk }}" } (Mode: Expression) |
++-------------------------------------------------------------------+
+```
 
+**10a. IF Node: "Is Follower?"**
+*This node decides the reply based on the follower status and the rule in the sheet.*
+```
++-------------------------------------------------------------------+
+| [10a] IF Node: "Is Follower?"                                     |
++-------------------------------------------------------------------+
+| Conditions:                                                       |
+|   - Condition 1:                                                  |
+|     - Value 1: {{ $('Read Rules from Sheet').json.FollowerOnly }} (Mode: Expression)|
+|     - Operation: Is False                                         |
+|   - Condition 2 (OR):                                             |
+|     - Value 1: {{ $('Check Follower Status').json.is_follower }} (Mode: Expression)|
+|     - Operation: Is True                                          |
++-------------------------------------------------------------------+
+```
+
+**11a. HTTP Request Node: "Post Custom Reply"**
+*Connect to the **TRUE** output of "Is Follower?". This sends the main reply.*
+```
++-------------------------------------------------------------------+
+| [11a] HTTP Request: "Post Custom Reply"                           |
++-------------------------------------------------------------------+
+|   Body:                                                           |
+|     - payload: { "media_id": "{{ $('Filter Out Replied Comments').json.media.pk }}", "text": "{{ $('Read Rules from Sheet').json.CommentReply }}" } (Mode: Expression)|
++-------------------------------------------------------------------+
+```
+
+**12a. HTTP Request Node: "Post 'Please Follow' Reply"**
+*Connect to the **FALSE** output of "Is Follower?". This sends the alternative reply.*
+```
++-------------------------------------------------------------------+
+| [12a] HTTP Request: "Post 'Please Follow' Reply"                  |
++-------------------------------------------------------------------+
+|   Body:                                                           |
+|     - payload: { "media_id": "{{ $('Filter Out Replied Comments').json.media.pk }}", "text": "Please follow us to get a reply!" } (Mode: Expression)|
++-------------------------------------------------------------------+
+```
+
+#### FALSE Branch (AI-Powered Reply)
+
+**7b. OpenAI Node: "Generate AI Reply"**
+*Connect this to the **FALSE** output of "Rule Found?".*
+```
++-------------------------------------------------------------------+
+| [7b] OpenAI Node: "Generate AI Reply"                             |
++-------------------------------------------------------------------+
+| Parameters:                                                       |
+|   Resource:       Chat                                            |
+|   Model:          gpt-4o                                          |
+|   Prompt:         Based on this comment: "{{ $('Filter Out Replied Comments').json.text }}", write a helpful reply. |
++-------------------------------------------------------------------+
+```
+
+**8b. HTTP Request Node: "Post AI Reply"**
+*Connect this node to the output of the OpenAI node.*
+```
++-------------------------------------------------------------------+
+| [8b] HTTP Request Node: "Post AI Reply"                           |
++-------------------------------------------------------------------+
+|   Body:                                                           |
+|     - payload: { "media_id": "{{ $('Filter Out Replied Comments').json.media.pk }}", "text": "{{ $('Generate AI Reply').json.choices[0].message.content }}" } (Mode: Expression)|
++-------------------------------------------------------------------+
+```
 ---
 - [Project Structure](#project-structure)
-- [Farsi Documentation (مستندات فارسی)](#farsi-documentation-مستندات-فارسی)
-
 ---
 
 # Farsi Documentation (مستندات فارسی)
@@ -365,336 +496,305 @@ By setting up this workflow, you create a fully automated and intelligent commen
 - [قابلیت‌ها](#قابلیت‌ها)
 - [شیوه عملکرد](#شیوه-عملکرد)
 - [نصب و راه‌اندازی](#نصب-و-راه‌اندازی)
-  - [روش اول: Docker (توصیه شده)](#روش-اول-docker-توصیه-شده)
-  - [روش دوم: نصب دستی (venv)](#روش-دوم-نصب-دستی-venv)
 - [راهنمای استفاده](#راهنمای-استفاده)
-  - [۱. ورود به حساب کاربری](#۱-ورود-به-حساب-کاربری)
-  - [۲. ساخت تسک اتومیشن](#۲-ساخت-تسک-اتومیشن)
-  - [۳. مدیریت تسک‌ها](#۳-مدیریت-تسک‌ها)
 - [مستندات API](#مستندات-api)
-  - [احراز هویت (Authentication)](#احراز-هویت-authentication)
-  - [مدیریت اتومیشن (Automation Management)](#مدیریت-اتومیشن-automation-management)
-  - [اتصال به n8n (n8n Integration)](#اتصال-به-n8n-n8n-integration)
-- [آموزش اتصال به n8n](#آموزش-اتصال-به-n8n)
-  - [ورک‌فلو ۱: لاگین به اینستاگرام (فقط یک بار اجرا شود)](#ورک‌فلو-۱-لاگین-به-اینستاگرام-فقط-یک-بار-اجرا-شود)
-  - [ورک‌فلو ۲: پاسخ هوشمند به کامنت‌ها با AI (زمان‌بندی شده)](#ورک‌فلو-۲-پاسخ-هوشمند-به-کامنت‌ها-با-ai-زمان‌بندی-شده)
+- [آموزش پیشرفته اتصال به n8n](#آموزش-پیشرفته-اتصال-به-n8n)
+  - [پیش‌نیاز: لاگین به اینستاگرام](#پیش‌نیاز-لاگین-به-اینستاگرام)
+  - [ورک‌فلو پیشرفته: پاسخ هوشمند و قانون‌مند به کامنت‌ها](#ورک‌فلو-پیشرفته-پاسخ-هوشمند-و-قانون‌مند-به-کامنت‌ها)
 
 ---
 
-## قابلیت‌ها
+## (بخش‌های معرفی، قابلیت‌ها، نصب و راهنمای استفاده همانند نسخه قبلی باقی می‌مانند) ...
 
-- **اتوماسیون دایرکت و کامنت**: پاسخ خودکار به کامنت‌ها و ارسال دایرکت بر اساس کلمات کلیدی.
-- **حالت فقط فالوورها**: محدود کردن اتومیشن فقط به کاربرانی که پیج را فالو کرده‌اند.
-- **پاسخ‌های سفارشی**: امکان تنظیم چندین پاسخ مختلف که به صورت رندوم برای کامنت و دایرکت انتخاب شوند.
-- **بدون نیاز به API رسمی**: استفاده از API خصوصی اینستاگرام از طریق `instagrapi`.
-- **رابط کاربری ساده**: یک پنل تحت وب برای مدیریت آسان تسک‌های اتومیشن.
-- **نصب آسان با Docker**: راه‌اندازی سریع و بی‌دردسر با Docker و Docker Compose.
-- **اتصال به n8n**: یک Endpoint اختصاصی برای اتصال به پلتفرم‌های اتومیشن مانند n8n.
+---
 
-## شیوه عملکرد
+## آموزش پیشرفته اتصال به n8n
 
-این اپلیکیشن از دو بخش اصلی تشکیل شده است:
+این آموزش شما را قدم به قدم در ساخت یک ورک‌فلو قدرتمند و قانون‌مند راهنمایی می‌کند که به صورت هوشمند و با استفاده از Google Sheets و یک عامل هوش مصنوعی، به کامنت‌های آخرین پست‌های شما پاسخ می‌دهد.
 
-1.  **Backend (FastAPI)**: یک سرور پایتون که تمام منطق اصلی را مدیریت می‌کند. این بخش با استفاده از کتابخانه `instagrapi` به اینستاگرام متصل شده، کامنت‌های پست‌های مشخص شده را مانیتور کرده و اقداماتی مانند پاسخ یا ارسال دایرکت را انجام می‌دهد.
-2.  **Frontend (Vanilla JS/HTML/CSS)**: یک رابط کاربری ساده که در مرورگر شما اجرا می‌شود و با API بک‌اند ارتباط برقرار می‌کند تا به شما اجازه دهد وارد حساب خود شده، تسک‌های اتومیشن را ساخته و مدیریت کنید.
+### پیش‌نیاز: لاگین به اینستاگرام
 
-وقتی شما یک تسک اتومیشن را شروع می‌کنید، بک‌اند یک حلقه (loop) در پس‌زمینه اجرا می‌کند که به صورت دوره‌ای کامنت‌های جدید پست مورد نظر را دریافت و طبق قوانین تعریف شده توسط شما، آن‌ها را پردازش می‌کند.
+قبل از اینکه بتوانید ورک‌فلو اصلی را اجرا کنید، **باید** از طریق API به حساب اینستاگرام خود لاگین کنید. این یک **تنظیمات یک‌باره** است. اپلیکیشن شما را برای تمام اقدامات بعدی لاگین نگه می‌دارد.
 
-## نصب و راه‌اندازی
+**برای این کار، یک ورک‌فلو ساده و مجزا در n8n بسازید.**
 
-### روش اول: Docker (توصیه شده)
-
-این ساده‌ترین روش برای راه‌اندازی اپلیکیشن است.
-
-**پیش‌نیازها**:
-- [نرم‌افزار Docker](https://www.docker.com/get-started)
-- [نرم‌افزار Docker Compose](https://docs.docker.com/compose/install/)
-
-**مراحل**:
-
-۱. **دریافت پروژه**:
-   ```bash
-   git clone <repository_url>
-   cd <repository_name>
-   ```
-
-۲. **اجرای اسکریپت نصب**:
-   این اسکریپت به شما کمک می‌کند تا فایل `.env` را برای تنظیم پورت‌های اپلیکیشن بسازید.
-   ```bash
-   ./install.sh
-   ```
-   شما می‌توانید پورت‌های پیش‌فرض (بک‌اند: 8000، فرانت‌اند: 8080) را انتخاب کرده یا مقادیر دلخواه خود را وارد کنید.
-
-۳. **ساخت و اجرای کانتینرها**:
-   ```bash
-   docker-compose up --build -d
-   ```
-   فلگ `-d` باعث می‌شود کانتینرها در پس‌زمینه اجرا شوند.
-
-۴. **دسترسی به اپلیکیشن**:
-   -   **رابط کاربری (Frontend)**: مرورگر خود را باز کرده و به آدرس `http://localhost:<FRONTEND_PORT>` (مثلاً `http://localhost:8080`) بروید.
-   -   **مستندات API**: مستندات کامل API در آدرس `http://localhost:<BACKEND_PORT>/docs` (مثلاً `http://localhost:8000/docs`) در دسترس است.
-
-برای متوقف کردن اپلیکیشن، دستور `docker-compose down` را اجرا کنید.
-
-### روش دوم: نصب دستی (venv)
-
-اگر تمایلی به استفاده از Docker ندارید، می‌توانید بک‌اند و فرانت‌اند را به صورت جداگانه اجرا کنید.
-
-**پیش‌نیازها**:
-- پایتون نسخه 3.9 یا بالاتر
-- یک وب سرور ساده برای فرانت‌اند (مانند `http.server` خود پایتون).
-
-**مراحل**:
-
-۱. **پروژه را دریافت کنید**.
-
-۲. **اسکریپت نصب venv را اجرا کنید**:
-   این اسکریپت یک محیط مجازی پایتون ساخته و تمام پکیج‌های مورد نیاز را نصب می‌کند.
-   ```bash
-   ./setup_venv.sh
-   ```
-
-۳. **محیط مجازی را فعال کنید**:
-   ```bash
-   source backend/.venv/bin/activate
-   ```
-
-۴. **سرور بک‌اند را اجرا کنید**:
-   ```bash
-   uvicorn main:app --host 0.0.0.0 --port 8000 --app-dir backend
-   ```
-   بک‌اند اکنون روی آدرس `http://localhost:8000` در حال اجراست.
-
-۵. **سرور فرانت‌اند را اجرا کنید**:
-   یک **ترمینال جدید** باز کرده و یک وب سرور ساده را از پوشه `frontend` اجرا کنید.
-   ```bash
-   python3 -m http.server 8080 --directory frontend
-   ```
-   فرانت‌اند اکنون روی آدرس `http://localhost:8080` در دسترس است.
-
-   **نکته**: اگر پورت بک‌اند را تغییر دادید، حتماً مقدار ثابت `API_BASE_URL` را در فایل `frontend/script.js` به‌روزرسانی کنید.
-
-## راهنمای استفاده
-
-### ۱. ورود به حساب کاربری
-
-شما دو راه برای ورود به حساب اینستاگرام خود دارید:
-
--   **نام کاربری و رمز عبور**: با وارد کردن اطلاعات حساب خود، اپلیکیشن وارد شده و یک فایل نشست (`<username>_session.json`) ایجاد می‌کند تا ورودهای بعدی سریع‌تر انجام شود.
--   **Session JSON**: اگر از قبل اطلاعات نشست (Session) را از `instagrapi` یا ابزار دیگری در اختیار دارید، می‌توانید محتوای JSON آن را در فیلد مربوطه وارد کنید. این روش امن‌تر است زیرا نیازی به ذخیره رمز عبور شما ندارد.
-
-### ۲. ساخت تسک اتومیشن
-
-پس از ورود، می‌توانید یک تسک اتومیشن جدید بسازید:
-
--   **آدرس پست اینستاگرام**: آدرس کامل پستی که می‌خواهید کامنت‌های آن مانیتور شود.
--   **کلمات کلیدی**: لیستی از کلمات که با کاما (`,`) از هم جدا شده‌اند. اگر کامنتی حاوی یکی از این کلمات باشد، اتومیشن فعال می‌شود (مثال: `قیمت, سفارش, خرید`).
--   **پاسخ‌های کامنت**: لیستی از پاسخ‌ها که هر کدام در یک خط جداگانه نوشته شده‌اند. یک پاسخ به صورت رندوم برای کامنت ارسال می‌شود.
--   **پاسخ‌های دایرکت**: لیستی از پیام‌های دایرکت که هر کدام در یک خط جداگانه نوشته شده‌اند. یک پیام به صورت رندوم برای کاربر ارسال می‌شود.
--   **فقط به فالوورها پاسخ بده**: اگر این گزینه فعال باشد، اتومیشن فقط برای کاربرانی که شما را فالو کرده‌اند اجرا می‌شود.
--   **پیام برای غیرفالوورها**: اگر گزینه بالا فعال باشد، این پیام به جای پاسخ اصلی برای کاربرانی که شما را فالو نکرده‌اند ارسال می‌شود.
-
-### ۳. مدیریت تسک‌ها
-
-در بخش "Active Automations" می‌توانید لیست تسک‌های در حال اجرا را مشاهده کنید. با کلیک روی دکمه **Delete** می‌توانید یک تسک را متوقف و حذف کنید.
-
-## مستندات API
-
-مستندات کامل و تعاملی API با Swagger UI در آدرس `/docs` سرور بک‌اند موجود است.
-
-### احراز هویت (Authentication)
-
--   `POST /login/credentials`: ورود با نام کاربری و رمز عبور.
--   `POST /login/session`: ورود با اطلاعات نشست (Session JSON).
--   `POST /logout`: خروج از حساب کاربری.
--   `GET /status`: بررسی وضعیت ورود.
-
-### مدیریت اتومیشن (Automation Management)
-
--   `POST /automations`: ساخت یک تسک اتومیشن جدید.
--   `GET /automations`: دریافت لیست تسک‌های فعال.
--   `DELETE /automations/{task_id}`: متوقف کردن یک تسک مشخص.
-
-### اتصال به n8n (n8n Integration)
-
--   `POST /api/n8n/action`: یک Endpoint عمومی برای n8n.
-
-    **فرمت Body**:
-    ```json
-    {
-      "action": "نام_عملیات",
-      "payload": { ... }
-    }
-    ```
-
-    **عملیات‌های پشتیبانی شده**:
-    1.  **`send_dm`**: ارسال دایرکت.
-        -   **Payload**: `{ "user_id": "12345", "text": "سلام!" }`
-    2.  **`post_comment`**: ثبت کامنت.
-        -   **Payload**: `{ "media_id": "12345", "text": "پست عالی بود!" }`
-    3.  **`get_media_comments`**: دریافت کامنت‌های یک پست.
-        -   **Payload**: `{ "media_id": "12345", "amount": 30 }`
-
-
-## آموزش اتصال به n8n
-
-شما می‌توانید از Endpoint اختصاصی n8n برای ساخت ورک‌فلوهای قدرتمند و سفارشی استفاده کنید. در ادامه دو ورک‌فلو ضروری برای شروع کار شما توضیح داده شده است.
-
-### ورک‌فلو ۱: لاگین به اینستاگرام (فقط یک بار اجرا شود)
-
-قبل از اجرای هر ورک‌فلو دیگری، باید از طریق API به حساب اینستاگرام خود لاگین کنید. این ورک‌فلو فقط **یک بار** نیاز به اجرای موفقیت‌آمیز دارد. اپلیکیشن، نشست (Session) را برای اقدامات بعدی فعال نگه می‌دارد.
-
-**یکی از دو روش زیر را انتخاب کنید.**
-
-#### روش الف: ورود با نام کاربری و رمز عبور
+#### روش پیشنهادی: ورود با Session JSON
 
 ```
-+----------------------------------------------+
-| [1] Start (شروع دستی)                        |
-|     (ورک‌فلو را یک بار اجرا می‌کند)             |
-+----------------------------------------------+
-                  |
-                  |
-                  v
-+----------------------------------------------+
-| [2] Login with Credentials (HTTP Request)    |
-+----------------------------------------------+
-| Method:         POST                         |
-| URL:            http://localhost:8000/login/credentials |
-| Body Type:      JSON                         |
-| Body:                                        |
-|   {                                          |
-|     "username": "your_instagram_username",   |
-|     "password": "your_instagram_password"    |
-|   }                                          |
-+----------------------------------------------+
++-------------------------------------------------------------------+
+| [1] نود Manual Start (شروع دستی)                                  |
+| توضیحات: این ورک‌فلو را به صورت دستی فقط یک بار اجرا می‌کند.         |
++-------------------------------------------------------------------+
+                               |
+                               v
++-------------------------------------------------------------------+
+| [2] نود HTTP Request: "ورود به اینستاگرام"                         |
++-------------------------------------------------------------------+
+| پارامترها:                                                        |
+|   Request Method:    POST               (حالت: Fixed)            |
+|   URL:               http://localhost:8000/login/session (حالت: Fixed) |
+|   Authentication:    None                                         |
+|   Body Content Type: JSON               (حالت: Fixed)            |
+|   JSON/RAW Parameters:                                            |
+|     - کلید (Key): session_data          (حالت: Fixed)            |
+|     - مقدار (Value): (آبجکت کامل JSON خود را اینجا وارد کنید) (حالت: Fixed) |
+|       {                                                           |
+|         "sessionid": "...",                                       |
+|         "ds_user_id": "...",                                       |
+|         "csrftoken": "...",                                        |
+|         "rur": "...",                                              |
+|         "mid": "..."                                               |
+|       }                                                           |
++-------------------------------------------------------------------+
 ```
+> **دستورالعمل**: این ورک‌فلو را بسازید، اطلاعات کامل Session JSON خود را در آن قرار دهید و روی "Execute Workflow" کلیک کنید. اگر با موفقیت اجرا شد، شما با موفقیت لاگین کرده‌اید. دیگر نیازی به اجرای مجدد این ورک‌فلو ندارید مگر اینکه نشست شما منقضی شود.
 
-#### روش ب: ورود با Session JSON
+### ورک‌فلو پیشرفته: پاسخ هوشمند و قانون‌مند به کامنت‌ها
 
-این روش در صورتی که اطلاعات نشست (Session) خود را داشته باشید، توصیه می‌شود.
-
-```
-+----------------------------------------------+
-| [1] Start (شروع دستی)                        |
-|     (ورک‌فلو را یک بار اجرا می‌کند)             |
-+----------------------------------------------+
-                  |
-                  |
-                  v
-+----------------------------------------------+
-| [2] Login with Session (HTTP Request)        |
-+----------------------------------------------+
-| Method:         POST                         |
-| URL:            http://localhost:8000/login/session |
-| Body Type:      JSON                         |
-| Body:                                        |
-|   {                                          |
-|     "session_data": {                        |
-|       "sessionid": "...",                    |
-|       "csrftoken": "...",                    |
-|       "...": "..."                           |
-|     }                                        |
-|   }                                          |
-+----------------------------------------------+
-```
-
-پس از اجرای موفقیت‌آمیز یکی از این دو ورک‌فلو، بک‌اند به حساب شما متصل شده و آماده اجرای تسک‌های اتوماسیون است.
-
-### ورک‌فلو ۲: پاسخ هوشمند به کامنت‌ها با AI (زمان‌بندی شده)
-
-این ورک‌فلو به صورت زمان‌بندی شده اجرا می‌شود، کامنت‌های جدید یک پست مشخص را دریافت می‌کند، از یک عامل هوش مصنوعی برای تولید پاسخ‌های هوشمند استفاده می‌کند و آن‌ها را در اینستاگرام منتشر می‌کند.
+این ورک‌فلو:
+۱. به صورت زمان‌بندی شده اجرا می‌شود.
+۲. آخرین پست‌های اینستاگرام شما را دریافت می‌کند.
+۳. برای هر پست، کامنت‌های آن را دریافت می‌کند.
+۴. کامنت‌هایی که قبلاً به آن‌ها پاسخ داده‌اید را فیلتر می‌کند.
+۵. یک فایل Google Sheet را برای پیدا کردن قوانین منطبق (بر اساس لینک پست، کلمات کلیدی و وضعیت فالو) بررسی می‌کند.
+۶. اگر قانونی پیدا شد، پاسخی را که در Google Sheet تعریف شده ارسال می‌کند.
+۷. در غیر این صورت، یک پاسخ با استفاده از هوش مصنوعی تولید و ارسال می‌کند.
 
 #### دیاگرام کلی ورک‌فلو
 
 ```
-+--------------+   +-------------------+   +-----------------+   +------------------+   +--------------------+
-| [1] Cron     |-->| [2] دریافت کامنت‌ها |-->| [3] تفکیک آیتم‌ها |-->| [4] عامل AI      |-->| [5] ارسال پاسخ      |
-| (هر ۵ دقیقه)  |   | (HTTP Request)    |   | (SplitInBatches)|   | (مثلاً OpenAI)   |   | (HTTP Request)     |
-+--------------+   +-------------------+   +-----------------+   +------------------+   +--------------------+
+[Cron] -> [دریافت پست‌ها] -> [حلقه پست‌ها] -> [دریافت کامنت‌ها] -> [حلقه کامنت‌ها] -> [فیلتر پاسخ‌داده‌شده] -> [خواندن شیت] -> [IF: قانون یافت شد؟]
+                                                                                                                      |
+                                                                                                  +-------------------+-------------------+
+                                                                                                  | (بله)                               | (خیر)
+                                                                                                  v                                   v
+                                                                           [کد: تطابق کلیدواژه؟] -> [IF: تطابق دارد؟]          [عامل AI]
+                                                                                                  |      | (بله)                      |
+                                                                                                  |      v                            |
+                                                                             (خیر)|      [بررسی فالوور] -> [IF: فالوور است؟]      |
+                                                                                                  |      | (بله)         | (خیر)      |
+                                                                                                  |      v               v            |
+                                                                                                  |   [پاسخ سفارشی]  [پاسخ "فالو کن"]  |
+                                                                                                  |      |               |            |
+                                                                                                  +------+---------------+------------+
+                                                                                                         |
+                                                                                                         v
+                                                                                                     [ارسال پاسخ AI]
 ```
 
 #### تنظیمات قدم به قدم نودها
 
-**قدم ۱: نود Cron (شروع‌کننده)**
-این نود ورک‌فلو را بر اساس یک زمان‌بندی مشخص شروع می‌کند.
+*(این یک راهنمای دقیق است. هر مرحله معادل یک نود در n8n است.)*
+
+**۱. نود Cron: "شروع زمان‌بندی شده"**
+*این نود ورک‌فلو را به صورت خودکار آغاز می‌کند.*
+```
++-------------------------------------------------------------------+
+| [1] نود Cron                                                      |
++-------------------------------------------------------------------+
+| پارامترها:                                                        |
+|   Mode:           Every X Minutes     (حالت: Fixed)            |
+|   Minutes:        15                  (حالت: Fixed)            |
++-------------------------------------------------------------------+
+```
+
+**۲. نود HTTP Request: "دریافت آخرین پست‌ها"**
+*جدیدترین پست‌های حساب اینستاگرام شما را دریافت می‌کند.*
+```
++-------------------------------------------------------------------+
+| [2] نود HTTP Request: "دریافت آخرین پست‌ها"                       |
++-------------------------------------------------------------------+
+| پارامترها:                                                        |
+|   Request Method:    POST               (حالت: Fixed)            |
+|   URL:               http://localhost:8000/api/n8n/action (حالت: Fixed) |
+|   Body Content Type: JSON               (حالت: Fixed)            |
+|   JSON/RAW Parameters:                                            |
+|     - کلید: action                   (حالت: Fixed)            |
+|     - مقدار: get_user_posts         (حالت: Fixed)            |
+|     - کلید: payload                  (حالت: Fixed)            |
+|     - مقدار: { "amount": 5 }        (حالت: Fixed)            |
+| Options:                                                          |
+|   Split Into:     Items               (حalt: Fixed)            |
+|   Path:           data                (حالت: Fixed)            |
++-------------------------------------------------------------------+
+```
+
+**۳. نود HTTP Request: "دریافت کامنت‌های پست"**
+*برای هر پست از مرحله قبل، کامنت‌های آن را دریافت می‌کند.*
+```
++-------------------------------------------------------------------+
+| [3] نود HTTP Request: "دریافت کامنت‌های پست"                      |
++-------------------------------------------------------------------+
+| پارامترها:                                                        |
+|   Request Method:    POST               (حالت: Fixed)            |
+|   URL:               http://localhost:8000/api/n8n/action (حالت: Fixed) |
+|   Body Content Type: JSON               (حالت: Fixed)            |
+|   JSON/RAW Parameters:                                            |
+|     - کلید: action                   (حالت: Fixed)            |
+|     - مقدار: get_media_comments     (حالت: Fixed)            |
+|     - کلید: payload                  (حالت: Expression)       |
+|     - مقدار: { "media_id": "{{ $json.pk }}" }                   |
+| Options:                                                          |
+|   Split Into:     Items               (حالت: Fixed)            |
+|   Path:           data                (حالت: Fixed)            |
++-------------------------------------------------------------------+
+```
+> **جریان داده**: `media_id` به صورت پویا از خروجی نود "دریافت آخرین پست‌ها" گرفته می‌شود. `{{ $json.pk }}` به فیلد `pk` هر پست اشاره دارد.
+
+**۴. نود Code: "فیلتر کامنت‌های پاسخ داده شده"**
+*این نود ساده بررسی می‌کند که آیا شما قبلاً به یک کامنت پاسخ داده‌اید یا خیر و در این صورت، ادامه ورک‌فلو را برای آن کامنت متوقف می‌کند.*
+```
++-------------------------------------------------------------------+
+| [4] نود Code: "فیلتر کامنت‌های پاسخ داده شده"                      |
++-------------------------------------------------------------------+
+| Language:       JavaScript                                        |
+| Code:                                                             |
+|   const hasReplied = $json.has_liked; // پراکسی برای پاسخ‌ها       |
+|   if (hasReplied) {                                               |
+|     return null; // اجرای این آیتم را متوقف کن                    |
+|   }                                                               |
+|   return $json; // اگر پاسخ نداده بودی، ادامه بده                 |
++-------------------------------------------------------------------+
+```
+
+**۵. نود Google Sheets: "خواندن قوانین از شیت"**
+*این نود قوانین را از یک فایل اکسل آنلاین می‌خواند.*
+> **تنظیمات اولیه**: یک فایل Google Sheet با ستون‌های `PostURL`, `Keywords`, `FollowerOnly`, `CommentReply`, `DMReply` بسازید.
 
 ```
-+----------------------------------------------+
-| [1] Cron (شروع زمان‌بندی شده)                |
-+----------------------------------------------+
-| Mode:           Every X Minutes              |
-| Minutes:        5                            |
-+----------------------------------------------+
++-------------------------------------------------------------------+
+| [5] نود Google Sheets: "خواندن قوانین از شیت"                     |
++-------------------------------------------------------------------+
+| پارامترها:                                                        |
+|   Authentication:    اکانت گوگل خود را متصل کنید                   |
+|   Resource:          Row                                          |
+|   Operation:         Lookup                                       |
+|   Spreadsheet:       فایل شیت خود را انتخاب کنید                   |
+|   Sheet:             شیت مورد نظر را انتخاب کنید                   |
+|   Column To Match On: PostURL             (حالت: Fixed)            |
+|   Value To Match:    {{ "https://www.instagram.com/p/" + $('دریافت کامنت‌های پست').json.code + "/" }} (حالت: Expression) |
++-------------------------------------------------------------------+
 ```
 
-**قدم ۲: نود دریافت کامنت‌ها (HTTP Request)**
-این نود با API ما ارتباط برقرار کرده و آخرین کامنت‌های یک پست مشخص را دریافت می‌کند.
-
+**۶. نود IF: "قانون یافت شد؟"**
+*بررسی می‌کند که آیا نود Google Sheets یک قانون منطبق پیدا کرده است یا خیر.*
 ```
-+----------------------------------------------+
-| [2] Get Comments (HTTP Request)              |
-+----------------------------------------------+
-| Method:         POST                         |
-| URL:            http://localhost:8000/api/n8n/action |
-| Body Type:      JSON                         |
-| Body:                                        |
-|   {                                          |
-|     "action": "get_media_comments",           |
-|     "payload": {                             |
-|       "media_id": "YOUR_POST_MEDIA_ID"       |
-|     }                                        |
-|   }                                          |
-| Options:                                     |
-|   Split Into:   Items                        |
-|   Path:         data                         |
-+----------------------------------------------+
++-------------------------------------------------------------------+
+| [6] نود IF: "قانون یافت شد؟"                                       |
++-------------------------------------------------------------------+
+| Conditions:                                                       |
+|   - شرط ۱:                                                        |
+|     - مقدار ۱: {{ $('خواندن قوانین از شیت').json.Keywords }} (حالت: Expression)|
+|     - عملیات: Is Not Empty (خالی نیست)                             |
++-------------------------------------------------------------------+
 ```
-> **نکته**: `media_id` شناسه‌ی یکتای یک پست در اینستاگرام است (مثلاً `319_12345...`). شما می‌توانید این شناسه را با ابزارهای آنلاین مختلف یا از ساختار URL پست پیدا کنید. گزینه `Split Into: Items` باعث می‌شود هر کامنت به صورت مجزا در مراحل بعدی پردازش شود.
 
-**قدم ۳: نود عامل هوش مصنوعی (مثلاً OpenAI)**
-این نود متن کامنت را دریافت کرده و یک پاسخ انسان-مانند تولید می‌کند.
+#### شاخه TRUE (پاسخ بر اساس قانون)
 
+**۷الف. نود Code: "بررسی تطابق کلمات کلیدی"**
+*اگر قانونی پیدا شد، این نود بررسی می‌کند که آیا متن کامنت، حاوی یکی از کلمات کلیدی تعریف شده در شیت است یا خیر.*
 ```
-+----------------------------------------------+
-| [4] OpenAI (عامل هوش مصنوعی)                 |
-+----------------------------------------------+
-| Resource:       Chat                         |
-| Model:          gpt-4o                       |
-| Prompt:                                      |
-|   Based on this Instagram comment:           |
-|   "{{ $json.text }}"                         |
-|                                              |
-|   Write a friendly and engaging reply in Persian. |
-|   Keep it concise and positive.              |
-|                                              |
-+----------------------------------------------+
++-------------------------------------------------------------------+
+| [7a] نود Code: "بررسی تطابق کلمات کلیدی"                           |
++-------------------------------------------------------------------+
+| Language:       JavaScript                                        |
+| Code:                                                             |
+|   const keywords = $('خواندن قوانین از شیت').json.Keywords.split(','); |
+|   const commentText = $('فیلتر کامنت‌های پاسخ داده شده').json.text.toLowerCase(); |
+|   const match = keywords.some(k => commentText.includes(k.trim())); |
+|   return { ...$item.json, ruleMatched: match };                   |
++-------------------------------------------------------------------+
 ```
-> عبارت `{{ $json.text }}` متن کامنت دریافت شده از مرحله قبل را به صورت پویا در پرامپت قرار می‌دهد.
 
-**قدم ۴: نود ارسال پاسخ (HTTP Request)**
-این نود نهایی، پاسخ تولید شده توسط AI را به API ما ارسال می‌کند تا در اینستاگرام منتشر شود.
-
+**۸الف. نود IF: "کلمه کلیدی تطابق داشت؟"**
+*این نود را به خروجی نود کد قبلی متصل کنید. فقط در صورتی ادامه می‌دهد که `ruleMatched` برابر `true` باشد.*
 ```
-+----------------------------------------------+
-| [5] Post Reply (HTTP Request)                |
-+----------------------------------------------+
-| Method:         POST                         |
-| URL:            http://localhost:8000/api/n8n/action |
-| Body Type:      JSON                         |
-| Body:                                        |
-|   {                                          |
-|     "action": "post_comment",                 |
-|     "payload": {                             |
-|       "media_id": "{{ $json.media.pk }}",    |
-|       "text": "{{ $('OpenAI').json.choices[0].message.content }}" |
-|     }                                        |
-|   }                                          |
-+----------------------------------------------+
++-------------------------------------------------------------------+
+| [8a] نود IF: "کلمه کلیدی تطابق داشت؟"                              |
++-------------------------------------------------------------------+
+| Conditions:                                                       |
+|   - شرط ۱:                                                        |
+|     - مقدار ۱: {{ $json.ruleMatched }} (حالت: Expression)         |
+|     - عملیات: Is True                                             |
++-------------------------------------------------------------------+
 ```
-> **توضیح عبارات**:
-> - `{{ $json.media.pk }}`: این عبارت `pk` (معادل `media_id`) پست را از داده‌های اصلی کامنت بازیابی می‌کند.
-> - `{{ $('OpenAI').json.choices[0].message.content }}`: این عبارت، متن تولید شده توسط نود OpenAI را از خروجی آن استخراج می‌کند.
 
-با راه‌اندازی این ورک‌فلو، شما یک سیستم مدیریت کامنت تماماً خودکار و هوشمند خواهید داشت.
+**۹الف. نود HTTP Request: "بررسی وضعیت فالوور"**
+*به خروجی **TRUE** نود "کلمه کلیدی تطابق داشت؟" متصل شود. این نود بررسی می‌کند که آیا کامنت‌گذار شما را فالو می‌کند یا خیر.*
+```
++-------------------------------------------------------------------+
+| [9a] نود HTTP Request: "بررسی وضعیت فالوور"                       |
++-------------------------------------------------------------------+
+| پارامترها:                                                        |
+|   Request Method:    POST               (حالت: Fixed)            |
+|   URL:               http://localhost:8000/api/n8n/action (حالت: Fixed) |
+|   Body Content Type: JSON               (حالت: Fixed)            |
+|   Body:                                                           |
+|     - action: check_follower_status     (حالت: Fixed)            |
+|     - payload: { "target_user_id": "{{ $('فیلتر کامنت‌های پاسخ داده شده').json.user.pk }}" } (حالت: Expression) |
++-------------------------------------------------------------------+
+```
+
+**۱۰الف. نود IF: "آیا فالوور است؟"**
+*این نود بر اساس وضعیت فالوور و قانون تعریف شده در شیت، تصمیم می‌گیرد کدام پاسخ را ارسال کند.*
+```
++-------------------------------------------------------------------+
+| [10a] نود IF: "آیا فالوور است؟"                                    |
++-------------------------------------------------------------------+
+| Conditions:                                                       |
+|   - شرط ۱:                                                        |
+|     - مقدار ۱: {{ $('خواندن قوانین از شیت').json.FollowerOnly }} (حالت: Expression)|
+|     - عملیات: Is False                                            |
+|   - شرط ۲ (OR):                                                   |
+|     - مقدار ۱: {{ $('بررسی وضعیت فالوور').json.is_follower }} (حالت: Expression)|
+|     - عملیات: Is True                                             |
++-------------------------------------------------------------------+
+```
+
+**۱۱الف. نود HTTP Request: "ارسال پاسخ سفارشی"**
+*به خروجی **TRUE** نود "آیا فالوور است؟" متصل شود. این نود پاسخ اصلی را ارسال می‌کند.*
+```
++-------------------------------------------------------------------+
+| [11a] نود HTTP Request: "ارسال پاسخ سفارشی"                       |
++-------------------------------------------------------------------+
+|   Body:                                                           |
+|     - payload: { "media_id": "{{ $('فیلتر کامنت‌های پاسخ داده شده').json.media.pk }}", "text": "{{ $('خواندن قوانین از شیت').json.CommentReply }}" } (حالت: Expression)|
++-------------------------------------------------------------------+
+```
+
+**۱۲الف. نود HTTP Request: "ارسال پاسخ لطفا فالو کنید"**
+*به خروجی **FALSE** نود "آیا فالوور است؟" متصل شود. این نود پاسخ جایگزین را ارسال می‌کند.*
+```
++-------------------------------------------------------------------+
+| [12a] نود HTTP Request: "ارسال پاسخ لطفا فالو کنید"               |
++-------------------------------------------------------------------+
+|   Body:                                                           |
+|     - payload: { "media_id": "{{ $('فیلتر کامنت‌های پاسخ داده شده').json.media.pk }}", "text": "برای دریافت پاسخ، لطفا ابتدا پیج ما را فالو کنید!" } (حالت: Expression)|
++-------------------------------------------------------------------+
+```
+
+#### شاخه FALSE (پاسخ با هوش مصنوعی)
+
+**۷ب. نود OpenAI: "تولید پاسخ با AI"**
+*این نود را به خروجی **FALSE** نود "قانون یافت شد؟" متصل کنید.*
+```
++-------------------------------------------------------------------+
+| [7b] نود OpenAI: "تولید پاسخ با AI"                               |
++-------------------------------------------------------------------+
+| پارامترها:                                                        |
+|   Resource:       Chat                                            |
+|   Model:          gpt-4o                                          |
+|   Prompt:         بر اساس این کامنت: "{{ $('فیلتر کامنت‌های پاسخ داده شده').json.text }}"، یک پاسخ دوستانه و مفید بنویس. |
++-------------------------------------------------------------------+
+```
+
+**۸ب. نود HTTP Request: "ارسال پاسخ AI"**
+*این نود را به خروجی نود OpenAI متصل کنید.*
+```
++-------------------------------------------------------------------+
+| [8b] نود HTTP Request: "ارسال پاسخ AI"                            |
++-------------------------------------------------------------------+
+|   Body:                                                           |
+|     - payload: { "media_id": "{{ $('فیلتر کامنت‌های پاسخ داده شده').json.media.pk }}", "text": "{{ $('تولید پاسخ با AI').json.choices[0].message.content }}" } (حالت: Expression)|
++-------------------------------------------------------------------+
+```

@@ -50,7 +50,7 @@ async def login_via_credentials(credentials: UserCredentials):
     """
     Login to Instagram using username and password.
     """
-    success, message = client.login_with_credentials(credentials.username, credentials.password)
+    success, message = await client.login_with_credentials(credentials.username, credentials.password)
     if success:
         return {"message": message}
     return JSONResponse(status_code=401, content={"message": message})
@@ -176,9 +176,26 @@ async def handle_n8n_action(request: N8NRequest):
             if not media_id:
                 return JSONResponse(status_code=400, content={"message": "media_id is required for get_media_comments."})
             comments = client.cl.media_comments(media_id, amount=int(amount))
-            # Convert comment objects to dicts for JSON serialization
             comments_data = [c.dict() for c in comments]
             return {"status": "success", "data": comments_data}
+
+        elif action == "get_user_posts":
+            user_id = payload.get("user_id", client.cl.user_id) # Defaults to self if no user_id is provided
+            amount = payload.get("amount", 10)
+            if not user_id:
+                return JSONResponse(status_code=400, content={"message": "user_id is required."})
+            posts = client.cl.user_medias(user_id, amount=int(amount))
+            posts_data = [p.dict() for p in posts]
+            return {"status": "success", "data": posts_data}
+
+        elif action == "check_follower_status":
+            target_user_id = payload.get("target_user_id")
+            if not target_user_id:
+                return JSONResponse(status_code=400, content={"message": "target_user_id is required."})
+
+            followers = await client.get_followers()
+            is_follower = str(target_user_id) in followers
+            return {"status": "success", "is_follower": is_follower}
 
         else:
             return JSONResponse(status_code=400, content={"message": f"Unknown action: {action}"})

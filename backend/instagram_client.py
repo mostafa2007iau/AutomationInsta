@@ -5,6 +5,8 @@ import json
 
 import uuid
 
+import time
+
 class InstagramClient:
     """
     A wrapper class for the instagrapi.Client to manage Instagram interactions,
@@ -15,8 +17,12 @@ class InstagramClient:
         self.is_logged_in = False
         self.username = None
         self.active_tasks = {} # To store and manage running automation tasks
+        # Centralized cache for followers list
+        self._followers_cache = None
+        self._cache_expiry_time = 0
+        self._CACHE_DURATION_SECONDS = 1800 # 30 minutes
 
-    def login_with_credentials(self, username, password):
+    async def login_with_credentials(self, username, password):
         """
         Logs in to Instagram using username and password.
         Dumps the session to a JSON file for future use.
@@ -25,6 +31,10 @@ class InstagramClient:
             session_dir = "sessions"
             os.makedirs(session_dir, exist_ok=True)
             session_file = os.path.join(session_dir, f"{username}_session.json")
+
+            # instagrapi login methods are synchronous, so we can't make the whole block async without running it in an executor.
+            # For simplicity, we will keep the login part synchronous and handle the async cache call carefully.
+            # This is a compromise. A full async implementation would require an async-native Instagram library.
 
             if os.path.exists(session_file):
                 self.cl.load_settings(session_file)
@@ -35,6 +45,7 @@ class InstagramClient:
             self.cl.dump_settings(session_file) # Always dump to refresh the session
             self.is_logged_in = True
             self.username = username
+            await self.get_followers(force_refresh=True) # Pre-populate cache on login
             return True, f"Successfully logged in as {username}"
         except Exception as e:
             self.is_logged_in = False
@@ -88,7 +99,7 @@ class InstagramClient:
 
         task_id = str(uuid.uuid4())
         task = AutomationTask(
-            client=self.cl,
+            instagram_client=self,
             post_url=post_url,
             keywords=keywords,
             comment_replies=comment_replies,
@@ -116,18 +127,38 @@ class InstagramClient:
 
         return True, f"Automation task {task_id} stopped successfully."
 
+    async def get_followers(self, force_refresh=False):
+        """
+        Returns a set of follower user IDs, using a time-based cache.
+        """
+        current_time = time.time()
+        if force_refresh or not self._followers_cache or current_time > self._cache_expiry_time:
+            print(f"Refreshing followers cache (Force: {force_refresh})...")
+            try:
+                if not self.is_logged_in:
+                    print("Cannot refresh followers, not logged in.")
+                    return set()
+                followers_map = self.cl.user_followers(self.cl.user_id)
+                self._followers_cache = set(followers_map.keys())
+                self._cache_expiry_time = current_time + self._CACHE_DURATION_SECONDS
+                print(f"Followers cache refreshed successfully. Found {len(self._followers_cache)} followers.")
+            except Exception as e:
+                print(f"Error refreshing followers cache: {e}")
+                return self._followers_cache or set()
+
+        return self._followers_cache
+
 import asyncio
 import random
-import time
-
 from instagrapi.types import Comment
 
 class AutomationTask:
     """
     A class to hold the state and logic of a single automation task.
     """
-    def __init__(self, client: Client, post_url: str, keywords: list, comment_replies: list, dm_replies: list, followers_only: bool, follow_message: str):
-        self.cl = client
+    def __init__(self, instagram_client, post_url: str, keywords: list, comment_replies: list, dm_replies: list, followers_only: bool, follow_message: str):
+        self.parent_client = instagram_client
+        self.cl = self.parent_client.cl
         self.post_url = post_url
         self.post_pk = self.cl.media_pk_from_url(post_url)
         self.keywords = [k.lower() for k in keywords]
@@ -137,29 +168,6 @@ class AutomationTask:
         self.follow_message = follow_message
         self.processed_comments = set()
         self.is_running = False
-        # Cache for followers list
-        self._followers_cache = None
-        self._cache_expiry_time = 0
-        self._CACHE_DURATION_SECONDS = 1800 # 30 minutes
-
-    async def _get_followers(self):
-        """
-        Returns a set of follower user IDs, using a time-based cache.
-        """
-        current_time = time.time()
-        if not self._followers_cache or current_time > self._cache_expiry_time:
-            print("Refreshing followers cache...")
-            try:
-                followers_map = self.cl.user_followers(self.cl.user_id)
-                self._followers_cache = set(followers_map.keys())
-                self._cache_expiry_time = current_time + self._CACHE_DURATION_SECONDS
-                print("Followers cache refreshed successfully.")
-            except Exception as e:
-                print(f"Error refreshing followers cache: {e}")
-                # Return the old cache if it exists, otherwise an empty set
-                return self._followers_cache or set()
-
-        return self._followers_cache
 
     async def _process_comment(self, comment: Comment):
         """
@@ -171,7 +179,7 @@ class AutomationTask:
 
             # 2. Check follower status if required
             if self.followers_only:
-                our_followers = await self._get_followers()
+                our_followers = await self.parent_client.get_followers()
                 if user_pk not in our_followers:
                     # Send DM asking to follow
                     if self.follow_message:
@@ -187,7 +195,7 @@ class AutomationTask:
             # 4. Send a DM
             if self.dm_replies:
                 dm_text = random.choice(self.dm_replies)
-                self.cl.direct_send(dm_text, user_ids=[user_id])
+                self.cl.direct_send(dm_text, user_ids=[user_pk])
 
             # 5. Mark as processed
             self.processed_comments.add(comment.pk)
