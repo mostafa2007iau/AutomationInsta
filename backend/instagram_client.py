@@ -128,6 +128,42 @@ class InstagramClient:
                 return self._followers_cache or set()
         return self._followers_cache
 
+    async def reply_to_comment(self, comment_id: str, text: str):
+        """
+        Replies to a specific comment ID. This is primarily for the n8n endpoint.
+        """
+        if not self.is_logged_in:
+            raise LoginRequired("You must be logged in to reply.")
+        try:
+            await asyncio.to_thread(self.cl.comment_reply, comment_id, text)
+            return True
+        except Exception as e:
+            print(f"Error replying to comment {comment_id}: {e}")
+            return False
+
+    async def is_follower(self, user_id: str):
+        """
+        Checks if a given user_id is a follower of the logged-in user.
+        Uses the followers cache to avoid repeated API calls.
+        """
+        if not self.is_logged_in:
+            raise LoginRequired("You must be logged in.")
+        followers = await self.get_followers()
+        return user_id in followers
+
+    async def send_dm(self, user_id: str, text: str):
+        """
+        Sends a direct message to a specific user_id.
+        """
+        if not self.is_logged_in:
+            raise LoginRequired("You must be logged in.")
+        try:
+            await asyncio.to_thread(self.cl.direct_send, text, user_ids=[user_id])
+            return True
+        except Exception as e:
+            print(f"Error sending DM to user {user_id}: {e}")
+            return False
+
 class AutomationTask:
     def __init__(self, instagram_client, post_url: str, keywords: list, comment_replies: list, dm_replies: list, followers_only: bool, follow_message: str):
         self.parent_client = instagram_client

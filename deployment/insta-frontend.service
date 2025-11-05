@@ -3,19 +3,12 @@ Description=Instagram Automation Frontend Service
 After=network.target
 
 [Service]
-# Replace 'your_user' with the user you want to run the service as
-User=your_user
-
-# Replace '/path/to/your/project' with the absolute path to the project directory
-WorkingDirectory=/path/to/your/project/frontend
-
-# Command to start the service
-# It uses Python's built-in HTTP server
-ExecStart=/usr/bin/python3 -m http.server 8080
-
-# Restart the service if it fails
+User={{USER}}
+Group={{USER}}
+WorkingDirectory={{INSTALL_PATH}}/frontend
+ExecStart={{INSTALL_PATH}}/.venv/bin/python3 -m http.server {{FRONTEND_PORT}}
 Restart=always
-RestartSec=10
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

@@ -1,11 +1,10 @@
 #!/bin/bash
 
 # --- Helper Functions ---
-function check_sudo() {
+function check_sudo_for_docker() {
     if [ "$EUID" -ne 0 ]; then
-        echo "⚠️ This script requires superuser privileges to manage Docker and install files in system directories."
-        echo "Please run with sudo:"
-        echo "sudo $0"
+        echo "⚠️ Docker installation requires superuser privileges."
+        echo "Please run with sudo: sudo $0"
         exit 1
     fi
 }
@@ -17,100 +16,125 @@ function detect_docker_compose() {
         DOCKER_COMPOSE_CMD="docker-compose"
     else
         echo "❌ Neither 'docker compose' nor 'docker-compose' could be found."
-        echo "Please install Docker and Docker Compose to continue."
-        exit 1
+        echo "Please install Docker and Docker Compose to continue with this option."
+        return 1
     fi
     echo "✅ Found Docker Compose command: '$DOCKER_COMPOSE_CMD'"
+    return 0
 }
 
-# --- Main Script ---
-check_sudo
-detect_docker_compose
+function get_port() {
+    local port_prompt=$1
+    local default_port=$2
+    local port
+    read -p "$port_prompt (default: $default_port): " port
+    port=${port:-$default_port}
+    while ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1024 ] || [ "$port" -gt 65535 ]; do
+        echo "Invalid port. Please enter a number between 1024 and 65535."
+        read -p "$port_prompt (default: $default_port): " port
+        port=${port:-$default_port}
+    done
+    echo $port
+}
 
-echo ""
+# --- Installation Logic ---
+
+function install_docker() {
+    check_sudo_for_docker
+    if ! detect_docker_compose; then
+        exit 1
+    fi
+
+    local FRONTEND_PORT=$(get_port "Enter the public-facing port for the Web UI" "8080")
+
+    echo "Creating .env file with your configuration..."
+    echo "FRONTEND_PORT=${FRONTEND_PORT}" > .env
+
+    echo "🚀 Building and starting the application with Docker Compose..."
+    $DOCKER_COMPOSE_CMD up --build -d
+
+    if [ $? -eq 0 ]; then
+        echo "✅ Success! The application is running via Docker."
+        echo "Access the UI at: http://<YOUR_SERVER_IP>:${FRONTEND_PORT}"
+    else
+        echo "❌ Docker Compose failed. Please check the logs."
+    fi
+}
+
+function install_venv() {
+    if [ "$EUID" -eq 0 ]; then
+        echo "⚠️ It's not recommended to run the venv installation as root. Please run without sudo."
+        read -p "Are you sure you want to continue as root? (y/n) [n]: " confirm
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            exit 0
+        fi
+    fi
+
+    echo "Setting up Python virtual environment..."
+    if ! python3 -m venv .venv; then
+        echo "❌ Failed to create virtual environment. Is python3-venv installed?"
+        exit 1
+    fi
+
+    source .venv/bin/activate
+    echo "Installing dependencies from requirements.txt..."
+    pip install -r backend/requirements.txt
+
+    local BACKEND_PORT=$(get_port "Enter the port for the backend service" "8000")
+    local FRONTEND_PORT=$(get_port "Enter the port for the frontend service" "8080")
+
+    echo "Configuring systemd services..."
+    local INSTALL_PATH=$(pwd)
+    local USER=$(whoami)
+
+    # --- Create backend service file ---
+    sed -e "s|{{USER}}|$USER|g" \
+        -e "s|{{INSTALL_PATH}}|$INSTALL_PATH|g" \
+        -e "s|{{BACKEND_PORT}}|$BACKEND_PORT|g" \
+        deployment/insta-backend.service > /tmp/insta-backend.service
+
+    # --- Create frontend service file ---
+    # A simple python server to serve static frontend files
+    sed -e "s|{{USER}}|$USER|g" \
+        -e "s|{{INSTALL_PATH}}|$INSTALL_PATH|g" \
+        -e "s|{{FRONTEND_PORT}}|$FRONTEND_PORT|g" \
+        deployment/insta-frontend.service > /tmp/insta-frontend.service
+
+    echo "The script needs sudo privileges to install systemd services."
+    sudo mv /tmp/insta-backend.service /etc/systemd/system/
+    sudo mv /tmp/insta-frontend.service /etc/systemd/system/
+
+    echo "Reloading systemd, enabling and starting services..."
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now insta-backend.service
+    sudo systemctl enable --now insta-frontend.service
+
+    if sudo systemctl is-active --quiet insta-backend.service && sudo systemctl is-active --quiet insta-frontend.service; then
+        echo "✅ Success! The application is running via systemd."
+        echo "Access the UI at: http://<YOUR_SERVER_IP>:${FRONTEND_PORT}"
+    else
+        echo "❌ Services failed to start. Check status with:"
+        echo "sudo systemctl status insta-backend.service"
+        echo "sudo systemctl status insta-frontend.service"
+    fi
+}
+
+
+# --- Main Script ---
 echo "Welcome to the Instagram Automation Setup Script!"
 echo "------------------------------------------------"
-
-# --- Installation Directory ---
-echo "Where would you like to install the application?"
-select INSTALL_DIR_CHOICE in "/opt/instagram-automation" "/srv/instagram-automation" "Current Directory"; do
-    case $INSTALL_DIR_CHOICE in
-        "/opt/instagram-automation"|"/srv/instagram-automation")
-            INSTALL_DIR=$INSTALL_DIR_CHOICE
+echo "Please choose your installation method:"
+select INSTALL_METHOD in "Docker (Recommended)" "Python venv (Manual)"; do
+    case $INSTALL_METHOD in
+        "Docker (Recommended)")
+            install_docker
             break
             ;;
-        "Current Directory")
-            INSTALL_DIR=$(pwd)
+        "Python venv (Manual)")
+            install_venv
             break
             ;;
     esac
 done
-
-# If installing in a system directory, move files there
-if [ "$INSTALL_DIR" != "$(pwd)" ]; then
-    echo "Installing application to $INSTALL_DIR..."
-    mkdir -p "$INSTALL_DIR"
-    # Move all files except the script itself
-    rsync -av --progress . "$INSTALL_DIR" --exclude "$(basename "$0")"
-    cd "$INSTALL_DIR" || exit 1
-fi
-
-# --- Environment Configuration ---
-if [ -f .env ]; then
-    echo "An existing .env file was found."
-    read -p "Do you want to overwrite it? (y/n) [n]: " overwrite
-    if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
-        echo "Keeping existing .env file. Skipping port configuration."
-    else
-        # Remove old file to proceed with config
-        rm .env
-    fi
-fi
-
-if [ ! -f .env ]; then
-    echo "How would you like to configure the ports?"
-    select mode in "Default (Frontend: 8080)" "Manual"; do
-        case $mode in
-            "Default (Frontend: 8080)")
-                FRONTEND_PORT=8080
-                break
-                ;;
-            "Manual")
-                read -p "Enter the port for the Frontend (e.g., 8080): " FRONTEND_PORT
-                while ! [[ "$FRONTEND_PORT" =~ ^[0-9]+$ ]] || [ "$FRONTEND_PORT" -lt 1024 ] || [ "$FRONTEND_PORT" -gt 65535 ]; do
-                    echo "Invalid port. Please enter a number between 1024 and 65535."
-                    read -p "Enter the port for the Frontend: " FRONTEND_PORT
-                done
-                break
-                ;;
-        esac
-    done
-
-    echo "Creating .env file with your configuration..."
-    echo "FRONTEND_PORT=${FRONTEND_PORT}" > .env
-    echo ".env file created successfully!"
-fi
-
-# --- Build and Run Docker Containers ---
-echo ""
-echo "🚀 Building and starting the application with Docker Compose..."
-echo "This may take a few minutes for the first build."
-$DOCKER_COMPOSE_CMD up --build -d
-
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "✅ Success! The application is now running."
-    echo "------------------------------------------------"
-    echo "You can access the frontend at:"
-    echo "   http://<YOUR_SERVER_IP>:${FRONTEND_PORT}"
-    echo ""
-    echo "To view logs, run: '$DOCKER_COMPOSE_CMD logs -f'"
-    echo "To stop the application, run: '$DOCKER_COMPOSE_CMD down'"
-    echo "------------------------------------------------"
-else
-    echo "❌ An error occurred while starting the Docker containers."
-    echo "Please check the output above for details."
-    echo "You can try running '$DOCKER_COMPOSE_CMD up --build' manually to diagnose the issue."
-fi
 
 exit 0
