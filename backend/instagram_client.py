@@ -71,13 +71,24 @@ class InstagramClient:
 
     async def login_with_session_id(self, session_id: str):
         try:
+            if not isinstance(session_id, str) or len(session_id) < 50:
+                return False, "Invalid session ID format. Please provide a valid sessionid string."
+
             await asyncio.to_thread(self.cl.login_by_sessionid, session_id)
+
+            # Verify the session is valid by making a test call
+            await asyncio.to_thread(self.cl.get_timeline_feed)
+
             self.is_logged_in = True
             self.username = self.cl.username
+            await self.get_followers(force_refresh=True) # Pre-populate cache
             return True, f"Successfully logged in with session as {self.cl.username}"
+        except LoginRequired:
+            self.is_logged_in = False
+            return False, "The provided session ID is invalid or has expired."
         except Exception as e:
             self.is_logged_in = False
-            return False, str(e)
+            return False, f"An unexpected error occurred: {str(e)}"
 
     async def logout(self):
         if self.is_logged_in:
