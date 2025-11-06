@@ -84,27 +84,32 @@ class InstagramClient:
             return False, str(e)
 
     async def login_with_session_id(self, session_json: str):
+        import tempfile
+
+        # Create a temporary directory for the session file
+        session_dir = "sessions"
+        os.makedirs(session_dir, exist_ok=True)
+
         try:
-            cookies = json.loads(session_json)
-            if not isinstance(cookies, list):
-                return False, "Invalid format. Expected a JSON array of cookies from Cookie-Editor."
+            # instagrapi expects a file path, so we write the JSON to a temporary file
+            with tempfile.NamedTemporaryFile(mode='w+', delete=False, dir=session_dir, suffix=".json") as temp_file:
+                temp_file.write(session_json)
+                temp_filepath = temp_file.name
 
-            # Construct a proper settings object for instagrapi
-            settings = {
-                "cookies": {cookie["name"]: cookie["value"] for cookie in cookies}
-            }
-
-            # Use a new client to avoid state contamination
+            # Use a new client instance to avoid state contamination
             self.cl = Client()
-            await asyncio.to_thread(self.cl.load_settings, settings)
+            await asyncio.to_thread(self.cl.load_settings, temp_filepath)
 
-            # The login call is necessary to populate user info
-            user_id = self.cl.user_id_from_username(self.cl.username)
-            await asyncio.to_thread(self.cl.user_info, user_id)
+            # The login call is necessary to populate user info and verify the session
+            await asyncio.to_thread(self.cl.login, self.cl.username, self.cl.password)
 
             self.is_logged_in = True
             self.username = self.cl.username
             await self.get_followers(force_refresh=True)
+
+            # Clean up the temporary file
+            os.remove(temp_filepath)
+
             return True, f"Successfully loaded session for user {self.cl.username}."
         except json.JSONDecodeError:
             return False, "Invalid JSON format. Please paste the entire content of the exported JSON file."
@@ -112,6 +117,9 @@ class InstagramClient:
             self.is_logged_in = False
             return False, "The provided session is invalid or expired. Please export a fresh one."
         except Exception as e:
+            # Clean up in case of error
+            if 'temp_filepath' in locals() and os.path.exists(temp_filepath):
+                os.remove(temp_filepath)
             self.is_logged_in = False
             return False, f"An unexpected error occurred during session load: {str(e)}"
 
