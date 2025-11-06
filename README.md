@@ -161,10 +161,11 @@ This document provides a complete, beginner-friendly guide to every aspect of th
 -   **با نام کاربری و رمز عبور:** امن‌ترین روش است. اطلاعات شما ذخیره نمی‌شود و فقط برای ایجاد یک Session استفاده می‌شود.
 -   **با Session JSON:** این روش پایدارترین راه برای استفاده از یک session موجود است، به خصوص اگر ورود دو مرحله‌ای دارید.
     -   **چگونه Session JSON را استخراج کنیم؟**
-        1.  در مرورگر Chrome یا Edge وارد سایت `instagram.com` شوید و لاگین کنید.
-        2.  یک افزونه مدیریت کوکی مانند `Cookie-Editor` را نصب کنید.
-        3.  روی آیکون افزونه کلیک کرده و گزینه `Export` -> `Export as JSON` را انتخاب کنید.
-        4.  محتوای فایل دانلود شده را به طور کامل کپی کرده و در فیلد "Session JSON" پیست کنید.
+        1.  در یک مرورگر مبتنی بر کروم (مانند Chrome, Edge, Brave) وارد سایت `instagram.com` شوید.
+        2.  افزونه مدیریت کوکی مانند **Cookie-Editor** را نصب کنید.
+        3.  روی آیکون افزونه در نوار ابزار خود کلیک کنید.
+        4.  گزینه **Export** را انتخاب کنید، سپس **Export as JSON** را بزنید. این کار یک فایل متنی را در کامپیوتر شما دانلود می‌کند.
+        5.  محتوای کامل آن فایل را باز کرده، کپی کنید و در کادر "Session JSON" در برنامه ما پیست کنید.
 
 #### مدیریت تسک‌های اتوماسیون {#مدیریت-تسک-ها-fa}
 1.  **URL پست:** لینک پستی که می‌خواهید کامنت‌های آن را مانیتور کنید.
@@ -489,10 +490,11 @@ This method is suitable for developers or users who prefer not to use Docker.
 -   **With Username & Password:** This is the most secure method. Your credentials are not stored and are only used to create a session.
 -   **With Session JSON:** This is the most stable method for using an existing session, especially if you have two-factor authentication enabled.
     -   **How to export your Session JSON?**
-        1.  In a Chromium-based browser (like Chrome or Edge), log into `instagram.com`.
-        2.  Install a cookie manager extension, such as `Cookie-Editor`.
-        3.  Click the extension's icon, choose `Export` -> `Export as JSON`.
-        4.  Copy the full content of the downloaded file and paste it into the "Session JSON" field.
+        1.  In a Chromium-based browser (like Chrome, Edge, Brave), log into `instagram.com`.
+        2.  Install a cookie manager extension, such as **Cookie-Editor**.
+        3.  Click the extension's icon in your toolbar.
+        4.  Choose **Export**, then **Export as JSON**. This will download a text file to your computer.
+        5.  Open that file, copy its entire contents, and paste it into the "Session JSON" field in our application.
 
 #### Managing Automation Tasks {#managing-tasks-en}
 1.  **Post URL:** The link to the post whose comments you want to monitor.

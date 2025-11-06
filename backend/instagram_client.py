@@ -57,37 +57,63 @@ class InstagramClient:
             session_dir = "sessions"
             os.makedirs(session_dir, exist_ok=True)
             session_file = os.path.join(session_dir, f"{username}_session.json")
+
+            # Use a new client instance for each login attempt to avoid state issues
+            self.cl = Client()
+
             if os.path.exists(session_file):
-                await asyncio.to_thread(self.cl.load_settings, session_file)
-            await asyncio.to_thread(self.cl.login, username, password)
-            await asyncio.to_thread(self.cl.dump_settings, session_file)
+                self.cl.load_settings(session_file)
+
+            result = await asyncio.to_thread(self.cl.login, username, password)
+            if not result: # Handles 2FA
+                # In a real app, you would now need a separate flow to handle the 2FA code.
+                # For now, we will treat this as a clear failure state.
+                return False, "Two-factor authentication is enabled. Please use the session login method for now."
+
+            self.cl.dump_settings(session_file)
             self.is_logged_in = True
             self.username = username
             await self.get_followers(force_refresh=True)
             return True, f"Successfully logged in as {username}"
+        except ChallengeRequired as e:
+            # For simplicity in this version, we will not handle the challenge interactively.
+            # We will instruct the user to resolve it manually or use the session method.
+            return False, "Challenge required. Please log in via the Instagram app or website to resolve it, then try again or use the session login method."
         except Exception as e:
             self.is_logged_in = False
             return False, str(e)
 
     async def login_with_session_id(self, session_json: str):
         try:
-            settings = json.loads(session_json)
-            if 'cookies' not in settings or 'user_agent' not in settings:
-                 return False, "Invalid session JSON. Please export the full session."
+            cookies = json.loads(session_json)
+            if not isinstance(cookies, list):
+                return False, "Invalid format. Expected a JSON array of cookies from Cookie-Editor."
+
+            # Construct a proper settings object for instagrapi
+            settings = {
+                "cookies": {cookie["name"]: cookie["value"] for cookie in cookies}
+            }
+
+            # Use a new client to avoid state contamination
+            self.cl = Client()
             await asyncio.to_thread(self.cl.load_settings, settings)
-            await asyncio.to_thread(self.cl.login, self.cl.username, self.cl.password)
+
+            # The login call is necessary to populate user info
+            user_id = self.cl.user_id_from_username(self.cl.username)
+            await asyncio.to_thread(self.cl.user_info, user_id)
+
             self.is_logged_in = True
             self.username = self.cl.username
             await self.get_followers(force_refresh=True)
-            return True, f"Successfully logged in with session for {self.cl.username}"
+            return True, f"Successfully loaded session for user {self.cl.username}."
         except json.JSONDecodeError:
-            return False, "Invalid JSON format. Please paste the entire exported session object."
+            return False, "Invalid JSON format. Please paste the entire content of the exported JSON file."
         except LoginRequired:
             self.is_logged_in = False
-            return False, "The provided session is invalid or has expired."
+            return False, "The provided session is invalid or expired. Please export a fresh one."
         except Exception as e:
             self.is_logged_in = False
-            return False, f"An unexpected error occurred: {str(e)}"
+            return False, f"An unexpected error occurred during session load: {str(e)}"
 
     async def logout(self):
         if self.is_logged_in:
