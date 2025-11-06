@@ -87,10 +87,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     sessionLoginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const sessionId = document.getElementById('sessionId').value;
+        const sessionJson = document.getElementById('sessionJson').value;
         try {
             updateStatus('Logging in...');
-            const data = await apiRequest('/login/session', 'POST', { session_id: sessionId });
+            const data = await apiRequest('/login/session', 'POST', { session_json: sessionJson });
             updateStatus(data.message);
             // After session login, we need to get the username
             const statusData = await apiRequest('/status');
@@ -148,10 +148,11 @@ document.addEventListener('DOMContentLoaded', () => {
             taskList.innerHTML = ''; // Clear
             Object.entries(tasks).forEach(([taskId, task]) => {
                 const row = document.createElement('tr');
+                // Add a class to the status cell based on the task status for styling
                 row.innerHTML = `
                     <td><a href="${task.post_url}" target="_blank">${task.post_url.substring(0, 40)}...</a></td>
                     <td>${task.keywords.join(', ')}</td>
-                    <td>${task.is_running ? 'Running' : 'Stopped'}</td>
+                    <td class="status-${task.status}">${task.status}</td>
                     <td><button class="btn btn-danger delete-task-btn" data-task-id="${taskId}">Delete</button></td>
                 `;
                 taskList.appendChild(row);

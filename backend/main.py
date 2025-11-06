@@ -31,7 +31,7 @@ class CredentialsLogin(BaseModel):
     password: str
 
 class SessionIdLogin(BaseModel):
-    session_id: str
+    session_json: str
 
 class AutomationRequest(BaseModel):
     post_url: str
@@ -69,7 +69,7 @@ async def login_via_credentials(creds: CredentialsLogin):
 
 @router.post("/login/session", tags=["Authentication"])
 async def login_via_session_id(session: SessionIdLogin):
-    success, message = await client.login_with_session_id(session.session_id)
+    success, message = await client.login_with_session_id(session.session_json)
     if success:
         return {"message": message}
     return JSONResponse(status_code=401, content={"message": message})
@@ -82,12 +82,10 @@ async def logout():
     return JSONResponse(status_code=400, content={"message": message})
 
 @router.post("/automations", tags=["Automation"])
-async def create_automation(request: AutomationRequest, background_tasks: BackgroundTasks):
+async def create_automation(request: AutomationRequest):
     if not client.is_logged_in:
         return JSONResponse(status_code=403, content={"message": "You must be logged in."})
-    task_id, message = client.start_automation(
-        background_tasks=background_tasks, **request.dict()
-    )
+    task_id, message = client.start_automation(**request.dict())
     if task_id:
         return {"task_id": task_id, "message": message}
     return JSONResponse(status_code=500, content={"message": message})
@@ -98,16 +96,16 @@ async def get_active_automations():
         return JSONResponse(status_code=403, content={"message": "You must be logged in."})
     return {
         task_id: {
-            "post_url": task.post_url,
-            "keywords": task.keywords,
-            "is_running": task.is_running
+            "post_url": task_info["task_obj"].post_url,
+            "keywords": task_info["task_obj"].keywords,
+            "status": task_info["task_obj"].status
         }
-        for task_id, task in client.active_tasks.items()
+        for task_id, task_info in client.active_tasks.items()
     }
 
 @router.delete("/automations/{task_id}", tags=["Automation"])
-async def stop_automation(task_id: str):
-    success, message = client.stop_automation(task_id)
+async def delete_automation(task_id: str):
+    success, message = await client.stop_automation(task_id)
     if success:
         return {"message": message}
     return JSONResponse(status_code=404, content={"message": message})

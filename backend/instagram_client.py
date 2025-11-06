@@ -69,23 +69,22 @@ class InstagramClient:
             self.is_logged_in = False
             return False, str(e)
 
-    async def login_with_session_id(self, session_id: str):
+    async def login_with_session_id(self, session_json: str):
         try:
-            if not isinstance(session_id, str) or len(session_id) < 50:
-                return False, "Invalid session ID format. Please provide a valid sessionid string."
-
-            await asyncio.to_thread(self.cl.login_by_sessionid, session_id)
-
-            # Verify the session is valid by making a test call
-            await asyncio.to_thread(self.cl.get_timeline_feed)
-
+            settings = json.loads(session_json)
+            if 'cookies' not in settings or 'user_agent' not in settings:
+                 return False, "Invalid session JSON. Please export the full session."
+            await asyncio.to_thread(self.cl.load_settings, settings)
+            await asyncio.to_thread(self.cl.login, self.cl.username, self.cl.password)
             self.is_logged_in = True
             self.username = self.cl.username
-            await self.get_followers(force_refresh=True) # Pre-populate cache
-            return True, f"Successfully logged in with session as {self.cl.username}"
+            await self.get_followers(force_refresh=True)
+            return True, f"Successfully logged in with session for {self.cl.username}"
+        except json.JSONDecodeError:
+            return False, "Invalid JSON format. Please paste the entire exported session object."
         except LoginRequired:
             self.is_logged_in = False
-            return False, "The provided session ID is invalid or has expired."
+            return False, "The provided session is invalid or has expired."
         except Exception as e:
             self.is_logged_in = False
             return False, f"An unexpected error occurred: {str(e)}"
@@ -101,17 +100,19 @@ class InstagramClient:
             return True, f"Successfully logged out from {username}."
         return False, "Not logged in."
 
-    def start_automation(self, background_tasks, **kwargs):
+    def start_automation(self, **kwargs):
         task_id = str(uuid.uuid4())
         task = AutomationTask(instagram_client=self, **kwargs)
-        self.active_tasks[task_id] = task
-        background_tasks.add_task(task.run)
+        loop = asyncio.get_event_loop()
+        asyncio_task = loop.create_task(task.run())
+        self.active_tasks[task_id] = {"task_obj": task, "asyncio_task": asyncio_task}
         return task_id, f"Automation task {task_id} started."
 
     async def stop_automation(self, task_id: str):
-        task = self.active_tasks.pop(task_id, None)
-        if task:
-            await task.stop()
+        task_info = self.active_tasks.pop(task_id, None)
+        if task_info:
+            task_info["asyncio_task"].cancel()
+            await task_info["task_obj"].stop()
             return True, f"Automation task {task_id} stopped."
         return False, "Task ID not found."
 
@@ -129,9 +130,6 @@ class InstagramClient:
         return self._followers_cache
 
     async def reply_to_comment(self, comment_id: str, text: str):
-        """
-        Replies to a specific comment ID. This is primarily for the n8n endpoint.
-        """
         if not self.is_logged_in:
             raise LoginRequired("You must be logged in to reply.")
         try:
@@ -142,19 +140,12 @@ class InstagramClient:
             return False
 
     async def is_follower(self, user_id: str):
-        """
-        Checks if a given user_id is a follower of the logged-in user.
-        Uses the followers cache to avoid repeated API calls.
-        """
         if not self.is_logged_in:
             raise LoginRequired("You must be logged in.")
         followers = await self.get_followers()
         return user_id in followers
 
     async def send_dm(self, user_id: str, text: str):
-        """
-        Sends a direct message to a specific user_id.
-        """
         if not self.is_logged_in:
             raise LoginRequired("You must be logged in.")
         try:
@@ -177,32 +168,26 @@ class AutomationTask:
         self.follow_message = follow_message
         self.processed_comments = set()
         self.is_running = False
+        self.status = "initializing"
 
     async def _process_comment(self, comment: Comment):
         if comment.has_liked or comment.pk in self.processed_comments:
             return
-
         self.processed_comments.add(comment.pk)
-
         if not any(keyword in comment.text.lower() for keyword in self.keywords):
             return
-
         await self.parent_client.trigger_webhooks(comment.dict())
-
         user_pk = str(comment.user.pk)
-
         if self.followers_only:
             our_followers = await self.parent_client.get_followers()
             if user_pk not in our_followers:
                 if self.follow_message:
                     await asyncio.to_thread(self.cl.direct_send, self.follow_message, user_ids=[user_pk])
                 return
-
         if self.comment_replies:
             await asyncio.sleep(random.uniform(5, 15))
             reply_text = random.choice(self.comment_replies)
             await asyncio.to_thread(self.cl.comment_reply, comment.pk, reply_text)
-
         if self.dm_replies:
             await asyncio.sleep(random.uniform(5, 15))
             dm_text = random.choice(self.dm_replies)
@@ -210,15 +195,22 @@ class AutomationTask:
 
     async def run(self):
         self.is_running = True
+        self.status = "running"
         while self.is_running:
             try:
                 comments = await asyncio.to_thread(self.cl.media_comments, self.post_pk, amount=20)
                 for comment in comments:
+                    if not self.is_running:
+                        break
                     await self._process_comment(comment)
                 await asyncio.sleep(random.uniform(60, 100))
-            except Exception as e:
-                print(f"An error occurred in automation task: {e}")
-                await asyncio.sleep(300)
+            except LoginRequired:
+                self.status = "relogin_required"
+                self.is_running = False
+            except Exception:
+                self.status = "error"
+                self.is_running = False
 
     async def stop(self):
         self.is_running = False
+        self.status = "stopped"

@@ -34,11 +34,12 @@
             </div>
 
             <div id="session-login" class="tab-content">
-                <h2>Login with Session ID</h2>
+                <h2>Login with Full Session JSON</h2>
                 <form id="session-login-form">
                     <div class="form-group">
-                        <label for="sessionId">Session ID:</label>
-                        <input type="text" id="sessionId" required placeholder="Enter your sessionid string">
+                        <label for="sessionJson">Session JSON:</label>
+                        <textarea id="sessionJson" rows="8" required placeholder="Paste the entire exported session JSON object here..."></textarea>
+                        <small>See the README for instructions on how to export your session.</small>
                     </div>
                     <button type="submit" class="btn">Login</button>
                 </form>
