@@ -4,14 +4,26 @@ services:
   backend:
     build:
       context: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount the sessions directory to persist login sessions across restarts
+      - ./backend/sessions:/app/sessions
+      # Mount the data directory to persist account configurations and logs
+      - ./backend/data:/app/backend/data
     restart: unless-stopped
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   frontend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./frontend
     ports:
-      - "${FRONTEND_PORT:-8080}:80"
+      - "80:80"
+    # The nginx.conf is now copied via the Dockerfile, so no volume mount is needed here.
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  backend_sessions:
+  backend_data:
